@@ -1,0 +1,552 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Deseo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #14110F; }
+  * { box-sizing: border-box; }
+</style>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+
+const h = React.createElement;
+const { useState, useEffect, useCallback } = React;
+
+const API = "https://deseo-backend.onrender.com/api";
+
+const REACTIONS = [
+  { key: "like", label: "Me gusta", glyph: "\u2661" },
+  { key: "love", label: "Me encanta", glyph: "\u2665" },
+  { key: "haha", label: "Me divierte", glyph: "\u25E1" },
+  { key: "wow", label: "Me asombra", glyph: "\u25CE" },
+  { key: "sad", label: "Me entristece", glyph: "\u25DF" },
+  { key: "angry", label: "Me enoja", glyph: "\u2726" },
+];
+
+function money(cents) {
+  return "$" + (cents / 100).toFixed(2);
+}
+
+async function api(path, opts) {
+  opts = opts || {};
+  const token = opts.token;
+  const res = await fetch(API + path, {
+    method: opts.method,
+    body: opts.body,
+    headers: Object.assign(
+      { "Content-Type": "application/json" },
+      token ? { Authorization: "Bearer " + token } : {},
+      opts.headers || {}
+    ),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Algo salió mal.");
+  return data;
+}
+
+const inputStyle = {
+  background: "#1D1812",
+  border: "1px solid #2A241C",
+  borderRadius: 4,
+  padding: "12px 14px",
+  color: "#F1E9DC",
+  fontFamily: "'Work Sans', sans-serif",
+  fontSize: 14,
+  outline: "none",
+};
+
+const primaryButton = {
+  background: "#B98B3E",
+  color: "#14110F",
+  border: "none",
+  borderRadius: 4,
+  padding: "12px 0",
+  fontFamily: "'Work Sans', sans-serif",
+  fontSize: 14,
+  fontWeight: 600,
+  cursor: "pointer",
+  marginTop: 4,
+};
+
+const toggleButton = {
+  background: "transparent",
+  border: "1px solid #2A241C",
+  borderRadius: 4,
+  padding: "8px 14px",
+  fontFamily: "'Work Sans', sans-serif",
+  fontSize: 13,
+  cursor: "pointer",
+};
+
+function Logo(props) {
+  const size = (props && props.size) || 28;
+  return h("div", {
+    style: { fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: size, letterSpacing: "-0.02em", color: "#F1E9DC" }
+  }, "Deseo");
+}
+
+function TicketPrice(props) {
+  return h("div", {
+    style: { display: "inline-flex", alignItems: "center", gap: 6, background: "#F1E9DC", color: "#14110F", padding: "4px 10px 4px 8px", borderRadius: 3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 500 }
+  },
+    h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: "#14110F", opacity: 0.15 } }),
+    money(props.cents)
+  );
+}
+
+function ForgotPasswordScreen(props) {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!email) { setError("Escribe tu correo."); return; }
+    setLoading(true);
+    try {
+      await api("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email: email }) });
+      setSent(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (sent) {
+    return h("div", { style: { textAlign: "center" } },
+      h("p", { style: { color: "#F1E9DC", fontSize: 14, marginBottom: 20 } },
+        "Si ese correo tiene una cuenta, te llegó un código de 6 dígitos. Revisa tu bandeja (y spam)."),
+      h("button", { onClick: () => props.onHaveCode(email), style: primaryButton }, "Ya tengo el código"),
+      h("button", { onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%", marginTop: 10 }) }, "Volver")
+    );
+  }
+
+  return h("form", { onSubmit: submit, style: { display: "flex", flexDirection: "column", gap: 12 } },
+    h("p", { style: { color: "#8A7B63", fontSize: 13, margin: "0 0 4px" } }, "Escribe tu correo y te mandamos un código para recuperar tu contraseña."),
+    h("input", { placeholder: "Correo electrónico", type: "email", value: email, onChange: (e) => setEmail(e.target.value), style: inputStyle }),
+    error ? h("p", { style: { color: "#D98B7A", fontSize: 13, margin: 0 } }, error) : null,
+    h("button", { type: "submit", disabled: loading, style: primaryButton }, loading ? "Enviando…" : "Enviar código"),
+    h("button", { type: "button", onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%" }) }, "Volver")
+  );
+}
+
+function ResetPasswordScreen(props) {
+  const [email, setEmail] = useState(props.email || "");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!email || !code || !newPassword) { setError("Completa todos los campos."); return; }
+    setLoading(true);
+    try {
+      await api("/auth/reset-password", { method: "POST", body: JSON.stringify({ email: email, code: code, newPassword: newPassword }) });
+      props.onDone();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return h("form", { onSubmit: submit, style: { display: "flex", flexDirection: "column", gap: 12 } },
+    h("input", { placeholder: "Correo electrónico", type: "email", value: email, onChange: (e) => setEmail(e.target.value), style: inputStyle }),
+    h("input", { placeholder: "Código de 6 dígitos", value: code, onChange: (e) => setCode(e.target.value), style: Object.assign({}, inputStyle, { fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 4, textAlign: "center" }), maxLength: 6 }),
+    h("input", { placeholder: "Nueva contraseña", type: "password", value: newPassword, onChange: (e) => setNewPassword(e.target.value), style: inputStyle }),
+    error ? h("p", { style: { color: "#D98B7A", fontSize: 13, margin: 0 } }, error) : null,
+    h("button", { type: "submit", disabled: loading, style: primaryButton }, loading ? "Guardando…" : "Cambiar contraseña"),
+    h("button", { type: "button", onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%" }) }, "Volver")
+  );
+}
+
+function AuthScreen(props) {
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({ username: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!form.email || !form.password || (mode === "register" && !form.username)) {
+      setError("Completa todos los campos.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const path = mode === "login" ? "/auth/login" : "/auth/register";
+      const body = mode === "login"
+        ? { email: form.email, password: form.password }
+        : { username: form.username, email: form.email, password: form.password };
+      const data = await api(path, { method: "POST", body: JSON.stringify(body) });
+      props.onAuthed(data.token, data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return h("div", {
+    style: { minHeight: "100vh", background: "#14110F", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Work Sans', sans-serif" }
+  },
+    h("div", { style: { width: "100%", maxWidth: 360 } },
+      h("div", { style: { textAlign: "center", marginBottom: 36 } },
+        h(Logo, { size: 40 }),
+        h("p", { style: { color: "#B98B3E", fontSize: 14, marginTop: 8, letterSpacing: "0.02em" } }, "Tu deseo, tu precio.")
+      ),
+      (mode === "login" || mode === "register") ? h("div", { style: { display: "flex", marginBottom: 24, borderBottom: "1px solid #2A241C" } },
+        ["login", "register"].map((m) =>
+          h("button", {
+            key: m,
+            onClick: () => setMode(m),
+            style: { flex: 1, background: "none", border: "none", padding: "10px 0", color: mode === m ? "#F1E9DC" : "#8A7B63", borderBottom: mode === m ? "2px solid #B98B3E" : "2px solid transparent", fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500, cursor: "pointer" }
+          }, m === "login" ? "Iniciar sesión" : "Crear cuenta")
+        )
+      ) : null,
+      notice ? h("p", { style: { color: "#8FBF8F", fontSize: 13, textAlign: "center", marginBottom: 12 } }, notice) : null,
+      mode === "forgot" ? h(ForgotPasswordScreen, {
+        onBack: () => setMode("login"),
+        onHaveCode: (email) => { setForm(Object.assign({}, form, { email: email })); setMode("reset"); }
+      }) : mode === "reset" ? h(ResetPasswordScreen, {
+        email: form.email,
+        onBack: () => setMode("login"),
+        onDone: () => { setNotice("Contraseña actualizada. Ya puedes iniciar sesión."); setMode("login"); }
+      }) : h("form", { onSubmit: submit, style: { display: "flex", flexDirection: "column", gap: 12 } },
+        mode === "register" ? h("input", {
+          placeholder: "Nombre de usuario",
+          value: form.username,
+          onChange: (e) => setForm(Object.assign({}, form, { username: e.target.value })),
+          style: inputStyle
+        }) : null,
+        h("input", {
+          placeholder: "Correo electrónico",
+          type: "email",
+          value: form.email,
+          onChange: (e) => setForm(Object.assign({}, form, { email: e.target.value })),
+          style: inputStyle
+        }),
+        h("input", {
+          placeholder: "Contraseña",
+          type: "password",
+          value: form.password,
+          onChange: (e) => setForm(Object.assign({}, form, { password: e.target.value })),
+          style: inputStyle
+        }),
+        error ? h("p", { style: { color: "#D98B7A", fontSize: 13, margin: 0 } }, error) : null,
+        h("button", { type: "submit", disabled: loading, style: primaryButton },
+          loading ? "Un momento…" : mode === "login" ? "Entrar" : "Crear mi cuenta"
+        ),
+        mode === "login" ? h("button", {
+          type: "button",
+          onClick: () => setMode("forgot"),
+          style: { background: "none", border: "none", color: "#8A7B63", fontSize: 13, cursor: "pointer", textAlign: "center", marginTop: 4 }
+        }, "¿Olvidaste tu contraseña?") : null
+      )
+    )
+  );
+}
+
+function timeAgo(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "ahora";
+  if (mins < 60) return mins + " min";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + " h";
+  const days = Math.floor(hrs / 24);
+  return days + " d";
+}
+
+function CommentSection(props) {
+  const postId = props.postId;
+  const token = props.token;
+  const onCountChange = props.onCountChange;
+  const [open, setOpen] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api("/posts/" + postId + "/comments?limit=50", { token: token });
+      setComments(data.comments || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && comments.length === 0) load();
+  };
+
+  const send = async (e) => {
+    e.preventDefault();
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setSending(true);
+    setError("");
+    try {
+      const data = await api("/posts/" + postId + "/comments", { token: token, method: "POST", body: JSON.stringify({ content: trimmed }) });
+      setComments([data.comment, ...comments]);
+      setText("");
+      if (onCountChange) onCountChange(1);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const remove = async (commentId) => {
+    try {
+      await api("/posts/" + postId + "/comments/" + commentId, { token: token, method: "DELETE" });
+      setComments(comments.filter((c) => c.id !== commentId));
+      if (onCountChange) onCountChange(-1);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return h("div", { style: { borderTop: "1px solid #2A241C" } },
+    h("button", {
+      onClick: toggle,
+      style: { width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "10px 16px", color: "#8A7B63", fontFamily: "'Work Sans', sans-serif", fontSize: 13, cursor: "pointer" }
+    }, open ? "Ocultar comentarios" : "Ver comentarios (" + props.count + ")"),
+    open ? h("div", { style: { padding: "0 16px 14px" } },
+      h("form", { onSubmit: send, style: { display: "flex", gap: 8, marginBottom: 12 } },
+        h("input", {
+          placeholder: "Escribe un comentario…",
+          value: text,
+          onChange: (e) => setText(e.target.value),
+          style: Object.assign({}, inputStyle, { flex: 1, padding: "8px 10px", fontSize: 13 })
+        }),
+        h("button", { type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, toggleButton, { padding: "8px 14px" }) }, sending ? "…" : "Enviar")
+      ),
+      error ? h("p", { style: { color: "#D98B7A", fontSize: 12, margin: "0 0 8px" } }, error) : null,
+      loading ? h("p", { style: { color: "#8A7B63", fontSize: 13 } }, "Cargando comentarios…") : null,
+      !loading && comments.length === 0 ? h("p", { style: { color: "#8A7B63", fontSize: 13 } }, "Sé la primera persona en comentar.") : null,
+      comments.map((c) =>
+        h("div", { key: c.id, style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "8px 0", borderTop: "1px solid #241f18" } },
+          h("div", null,
+            h("div", { style: { display: "flex", gap: 8, alignItems: "baseline" } },
+              h("span", { style: { color: "#F1E9DC", fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 500 } }, "@" + c.author),
+              h("span", { style: { color: "#5C4F3E", fontSize: 11 } }, timeAgo(c.createdAt))
+            ),
+            h("p", { style: { color: "#D8CDBB", fontFamily: "'Work Sans', sans-serif", fontSize: 13, margin: "2px 0 0" } }, c.content)
+          ),
+          c.mine ? h("button", {
+            onClick: () => remove(c.id),
+            title: "Borrar",
+            style: { background: "none", border: "none", color: "#5C4F3E", cursor: "pointer", fontSize: 12, padding: 0 }
+          }, "✕") : null
+        )
+      )
+    ) : null
+  );
+}
+
+function PostCard(props) {
+  const post = props.post;
+  const token = props.token;
+  const [reacting, setReacting] = useState(false);
+  const [commentCount, setCommentCount] = useState(post.commentCount || 0);
+  const myReaction = post.myReaction;
+
+  const react = async (type) => {
+    setReacting(true);
+    try {
+      await api("/posts/" + post.id + "/reaction", { token: token, method: "PUT", body: JSON.stringify({ reactionType: myReaction === type ? null : type }) });
+      props.onReacted();
+    } catch (e) {} finally {
+      setReacting(false);
+    }
+  };
+
+  return h("div", { style: { background: "#1D1812", border: "1px solid #2A241C", borderRadius: 6, overflow: "hidden", marginBottom: 16 } },
+    h("div", { style: { padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      h("span", { style: { color: "#F1E9DC", fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500 } }, "@" + post.author),
+      post.priceCents > 0 ? h(TicketPrice, { cents: post.priceCents }) : null
+    ),
+    h("div", { style: { height: 260, background: "#14110F", display: "flex", alignItems: "center", justifyContent: "center" } },
+      post.unlocked && post.mediaUrl
+        ? (post.mediaType === "video"
+            ? h("video", { src: post.mediaUrl, controls: true, style: { maxHeight: "100%", maxWidth: "100%" } })
+            : h("img", { src: post.mediaUrl, alt: "", style: { maxHeight: "100%", maxWidth: "100%", objectFit: "contain" } }))
+        : h("div", { style: { textAlign: "center", color: "#8A7B63", fontFamily: "'Work Sans', sans-serif" } },
+            h("div", { style: { fontSize: 28, marginBottom: 8 } }, "\u25D0"),
+            h("div", { style: { fontSize: 13 } }, "Contenido bloqueado")
+          )
+    ),
+    post.caption ? h("p", { style: { padding: "12px 16px 4px", color: "#F1E9DC", fontFamily: "'Work Sans', sans-serif", fontSize: 14, margin: 0 } }, post.caption) : null,
+    h("div", { style: { display: "flex", gap: 4, padding: "10px 16px 14px", flexWrap: "wrap" } },
+      REACTIONS.map((r) =>
+        h("button", {
+          key: r.key,
+          onClick: () => react(r.key),
+          disabled: reacting,
+          title: r.label,
+          style: { background: myReaction === r.key ? "#B98B3E" : "transparent", border: "1px solid #2A241C", borderRadius: 4, padding: "4px 8px", color: myReaction === r.key ? "#14110F" : "#8A7B63", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }
+        },
+          h("span", null, r.glyph),
+          h("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 } }, (post.reactions && post.reactions[r.key]) || 0)
+        )
+      )
+    ),
+    h(CommentSection, {
+      postId: post.id,
+      token: token,
+      count: commentCount,
+      onCountChange: (delta) => setCommentCount((c) => c + delta)
+    })
+  );
+}
+
+function CreatePostScreen(props) {
+  const token = props.token;
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [caption, setCaption] = useState("");
+  const [isFree, setIsFree] = useState(true);
+  const [price, setPrice] = useState("3.00");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const pickFile = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+  };
+
+  const submit = async () => {
+    setError("");
+    if (!file) { setError("Selecciona una foto o video primero."); return; }
+    if (!isFree && (!price || Number(price) <= 0)) { setError("Ponle un precio válido, o marca la publicación como gratuita."); return; }
+    setUploading(true);
+    try {
+      const sig = await api("/uploads/signature", { token: token });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("api_key", sig.apiKey);
+      formData.append("timestamp", sig.timestamp);
+      formData.append("signature", sig.signature);
+      formData.append("folder", sig.folder);
+      const uploadRes = await fetch(sig.uploadUrl, { method: "POST", body: formData });
+      const uploaded = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error((uploaded.error && uploaded.error.message) || "Falló la subida a Cloudinary.");
+      const mediaType = file.type.startsWith("video") ? "video" : "photo";
+      await api("/posts", { token: token, method: "POST", body: JSON.stringify({ caption: caption, mediaUrl: uploaded.secure_url, mediaType: mediaType, isFree: isFree, priceCents: isFree ? 0 : Math.round(Number(price) * 100) }) });
+      props.onCreated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return h("div", { style: { padding: 20, fontFamily: "'Work Sans', sans-serif" } },
+    h("h2", { style: { fontFamily: "'Fraunces', serif", color: "#F1E9DC", fontWeight: 600, fontSize: 22, marginBottom: 20 } }, "Nueva publicación"),
+    h("label", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: 200, background: "#1D1812", border: "1px dashed #2A241C", borderRadius: 6, cursor: "pointer", marginBottom: 16, overflow: "hidden" } },
+      preview
+        ? (file && file.type.startsWith("video")
+            ? h("video", { src: preview, style: { maxHeight: "100%", maxWidth: "100%" } })
+            : h("img", { src: preview, alt: "", style: { maxHeight: "100%", maxWidth: "100%", objectFit: "contain" } }))
+        : h("span", { style: { color: "#8A7B63", fontSize: 14 } }, "Toca para elegir foto o video"),
+      h("input", { type: "file", accept: "image/*,video/*", onChange: pickFile, style: { display: "none" } })
+    ),
+    h("textarea", { placeholder: "Escribe una descripción…", value: caption, onChange: (e) => setCaption(e.target.value), rows: 3, style: Object.assign({}, inputStyle, { width: "100%", boxSizing: "border-box", resize: "vertical", marginBottom: 16 }) }),
+    h("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
+      h("button", { onClick: () => setIsFree(true), style: Object.assign({}, toggleButton, { background: isFree ? "#B98B3E" : "transparent", color: isFree ? "#14110F" : "#8A7B63" }) }, "Gratis"),
+      h("button", { onClick: () => setIsFree(false), style: Object.assign({}, toggleButton, { background: !isFree ? "#B98B3E" : "transparent", color: !isFree ? "#14110F" : "#8A7B63" }) }, "De pago"),
+      !isFree ? h("input", { type: "number", min: "0.5", step: "0.5", value: price, onChange: (e) => setPrice(e.target.value), style: Object.assign({}, inputStyle, { width: 90 }) }) : null
+    ),
+    error ? h("p", { style: { color: "#D98B7A", fontSize: 13 } }, error) : null,
+    h("div", { style: { display: "flex", gap: 10 } },
+      h("button", { onClick: props.onCancel, style: Object.assign({}, toggleButton, { flex: 1 }) }, "Cancelar"),
+      h("button", { onClick: submit, disabled: uploading, style: Object.assign({}, primaryButton, { flex: 2, marginTop: 0 }) }, uploading ? "Publicando…" : "Publicar")
+    )
+  );
+}
+
+function DeseoApp() {
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [view, setView] = useState("feed");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadFeed = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api("/posts", { token: token });
+      setPosts(data.posts || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { if (token) loadFeed(); }, [token, loadFeed]);
+
+  if (!token) {
+    return h(AuthScreen, { onAuthed: (t, u) => { setToken(t); setUser(u); } });
+  }
+
+  return h("div", { style: { background: "#14110F", minHeight: "100vh", fontFamily: "'Work Sans', sans-serif" } },
+    h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #2A241C" } },
+      h(Logo, { size: 22 }),
+      h("div", { style: { display: "flex", alignItems: "center", gap: 14 } },
+        h("span", { style: { color: "#8A7B63", fontSize: 13 } }, "@" + (user && user.username)),
+        view === "feed"
+          ? h("button", { onClick: () => setView("create"), style: Object.assign({}, primaryButton, { margin: 0, padding: "8px 14px" }) }, "Publicar")
+          : h("button", { onClick: () => setView("feed"), style: Object.assign({}, toggleButton, { padding: "8px 14px" }) }, "Volver al feed")
+      )
+    ),
+    view === "feed"
+      ? h("div", { style: { padding: 20, maxWidth: 480, margin: "0 auto" } },
+          loading ? h("p", { style: { color: "#8A7B63", textAlign: "center" } }, "Cargando…") : null,
+          error ? h("p", { style: { color: "#D98B7A", textAlign: "center" } }, error) : null,
+          (!loading && posts.length === 0) ? h("p", { style: { color: "#8A7B63", textAlign: "center", marginTop: 40 } }, "Todavía no hay publicaciones. Sé la primera en publicar.") : null,
+          posts.map((p) => h(PostCard, { key: p.id, post: p, token: token, onReacted: loadFeed }))
+        )
+      : h("div", { style: { maxWidth: 480, margin: "0 auto" } },
+          h(CreatePostScreen, { token: token, onCancel: () => setView("feed"), onCreated: () => { setView("feed"); loadFeed(); } })
+        )
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(h(DeseoApp));
+
+</script>
+</body>
+</html>
