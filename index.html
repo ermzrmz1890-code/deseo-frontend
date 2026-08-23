@@ -6,16 +6,66 @@
 <title>Deseo</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; padding: 0; background: #14110F; }
+  html, body { margin: 0; padding: 0; background: #120D0F; }
   * { box-sizing: border-box; }
+
+  ::selection { background: #C6963F; color: #120D0F; }
+
+  input::placeholder, textarea::placeholder { color: #5C4A4C; }
+
+  input, textarea {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  input:focus, textarea:focus {
+    border-color: #C6963F !important;
+    box-shadow: 0 0 0 3px rgba(198, 150, 63, 0.16);
+  }
+
+  .btn-primary {
+    transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 4px 18px rgba(198,150,63,0.25); }
+  .btn-primary:active:not(:disabled) { transform: translateY(1px); }
+  .btn-primary:disabled { opacity: 0.55; cursor: default; }
+
+  .btn-ghost { transition: border-color 0.15s ease, color 0.15s ease; }
+  .btn-ghost:hover { border-color: #C6963F; color: #F3E8DA; }
+
+  .post-card {
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  .post-card:hover { border-color: #4A2B32; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+
+  .reaction-btn { transition: all 0.15s ease; }
+  .reaction-btn:hover:not(:disabled) { border-color: #C6963F; }
+
+  .media-protected {
+    -webkit-user-drag: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.6s cubic-bezier(0.16,1,0.3,1) both; }
+
+  /* Textura fina de grano sobre el fondo, para que el negro no se vea plano */
+  .grain::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: repeating-radial-gradient(circle at 0 0, transparent 0, #fff 1px, transparent 1px, transparent 3px);
+    background-size: 3px 3px;
+  }
 </style>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 </head>
 <body>
-<div id="root"></div>
+<div id="root" class="grain"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script>
 
 const h = React.createElement;
@@ -53,52 +103,88 @@ async function api(path, opts) {
   return data;
 }
 
+// Bloquea clic derecho y arrastre — desalienta la descarga casual de contenido.
+// (Ninguna protección web es infalible ante capturas de pantalla o grabación.)
+function blockContextMenu(e) { e.preventDefault(); return false; }
+
+// ---------- Tokens de diseño ----------
+
+const colors = {
+  bg: "#120D0F",
+  bgRaised: "#1E1517",
+  bgDeep: "#0C0809",
+  border: "#332226",
+  borderSoft: "#291d20",
+  ink: "#F3E8DA",
+  inkSoft: "#DCCEC0",
+  muted: "#8C7A78",
+  mutedDeep: "#5C4A4C",
+  gold: "#C6963F",
+  goldBright: "#E0B368",
+  wine: "#6B2A3A",
+  wineBright: "#8C3A4E",
+  red: "#D98B7A",
+  green: "#8FBF8F",
+};
+
 const inputStyle = {
-  background: "#1D1812",
-  border: "1px solid #2A241C",
+  background: colors.bgRaised,
+  border: "1px solid " + colors.border,
   borderRadius: 4,
-  padding: "12px 14px",
-  color: "#F1E9DC",
+  padding: "13px 14px",
+  color: colors.ink,
   fontFamily: "'Work Sans', sans-serif",
   fontSize: 14,
   outline: "none",
+  width: "100%",
 };
 
 const primaryButton = {
-  background: "#B98B3E",
-  color: "#14110F",
+  background: "linear-gradient(180deg, " + colors.goldBright + " 0%, " + colors.gold + " 100%)",
+  color: "#1A1112",
   border: "none",
   borderRadius: 4,
-  padding: "12px 0",
+  padding: "14px 0",
   fontFamily: "'Work Sans', sans-serif",
-  fontSize: 14,
+  fontSize: 13,
   fontWeight: 600,
   cursor: "pointer",
   marginTop: 4,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
 };
 
 const toggleButton = {
   background: "transparent",
-  border: "1px solid #2A241C",
+  border: "1px solid " + colors.border,
   borderRadius: 4,
-  padding: "8px 14px",
+  padding: "10px 14px",
+  color: colors.muted,
   fontFamily: "'Work Sans', sans-serif",
   fontSize: 13,
   cursor: "pointer",
 };
 
+function Ornament() {
+  return h("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 10, margin: "16px 0" } },
+    h("span", { style: { width: 34, height: 1, background: "linear-gradient(90deg, transparent, " + colors.wineBright + ")" } }),
+    h("span", { style: { color: colors.gold, display: "inline-block", border: "1px solid " + colors.gold, width: 6, height: 6, transform: "rotate(45deg)" } }),
+    h("span", { style: { width: 34, height: 1, background: "linear-gradient(90deg, " + colors.wineBright + ", transparent)" } })
+  );
+}
+
 function Logo(props) {
   const size = (props && props.size) || 28;
   return h("div", {
-    style: { fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: size, letterSpacing: "-0.02em", color: "#F1E9DC" }
+    style: { fontFamily: "'Fraunces', serif", fontStyle: "italic", fontWeight: 600, fontSize: size, letterSpacing: "-0.01em", color: colors.ink }
   }, "Deseo");
 }
 
 function TicketPrice(props) {
   return h("div", {
-    style: { display: "inline-flex", alignItems: "center", gap: 6, background: "#F1E9DC", color: "#14110F", padding: "4px 10px 4px 8px", borderRadius: 3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 500 }
+    style: { display: "inline-flex", alignItems: "center", gap: 6, background: colors.ink, color: "#1A1112", padding: "4px 10px 4px 8px", borderRadius: 3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 500 }
   },
-    h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: "#14110F", opacity: 0.15 } }),
+    h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: colors.wine } }),
     money(props.cents)
   );
 }
@@ -125,20 +211,20 @@ function ForgotPasswordScreen(props) {
   };
 
   if (sent) {
-    return h("div", { style: { textAlign: "center" } },
-      h("p", { style: { color: "#F1E9DC", fontSize: 14, marginBottom: 20 } },
+    return h("div", { style: { textAlign: "center" }, className: "fade-in" },
+      h("p", { style: { color: colors.ink, fontSize: 14, marginBottom: 20, lineHeight: 1.6 } },
         "Si ese correo tiene una cuenta, te llegó un código de 6 dígitos. Revisa tu bandeja (y spam)."),
-      h("button", { onClick: () => props.onHaveCode(email), style: primaryButton }, "Ya tengo el código"),
-      h("button", { onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%", marginTop: 10 }) }, "Volver")
+      h("button", { className: "btn-primary", onClick: () => props.onHaveCode(email), style: primaryButton }, "Ya tengo el código"),
+      h("button", { className: "btn-ghost", onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%", marginTop: 10 }) }, "Volver")
     );
   }
 
   return h("form", { onSubmit: submit, style: { display: "flex", flexDirection: "column", gap: 12 } },
-    h("p", { style: { color: "#8A7B63", fontSize: 13, margin: "0 0 4px" } }, "Escribe tu correo y te mandamos un código para recuperar tu contraseña."),
+    h("p", { style: { color: colors.muted, fontSize: 13, margin: "0 0 4px", lineHeight: 1.6 } }, "Escribe tu correo y te mandamos un código para recuperar tu contraseña."),
     h("input", { placeholder: "Correo electrónico", type: "email", value: email, onChange: (e) => setEmail(e.target.value), style: inputStyle }),
-    error ? h("p", { style: { color: "#D98B7A", fontSize: 13, margin: 0 } }, error) : null,
-    h("button", { type: "submit", disabled: loading, style: primaryButton }, loading ? "Enviando…" : "Enviar código"),
-    h("button", { type: "button", onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%" }) }, "Volver")
+    error ? h("p", { style: { color: colors.red, fontSize: 13, margin: 0 } }, error) : null,
+    h("button", { className: "btn-primary", type: "submit", disabled: loading, style: primaryButton }, loading ? "Enviando…" : "Enviar código"),
+    h("button", { className: "btn-ghost", type: "button", onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%" }) }, "Volver")
   );
 }
 
@@ -166,11 +252,11 @@ function ResetPasswordScreen(props) {
 
   return h("form", { onSubmit: submit, style: { display: "flex", flexDirection: "column", gap: 12 } },
     h("input", { placeholder: "Correo electrónico", type: "email", value: email, onChange: (e) => setEmail(e.target.value), style: inputStyle }),
-    h("input", { placeholder: "Código de 6 dígitos", value: code, onChange: (e) => setCode(e.target.value), style: Object.assign({}, inputStyle, { fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 4, textAlign: "center" }), maxLength: 6 }),
+    h("input", { placeholder: "Código de 6 dígitos", value: code, onChange: (e) => setCode(e.target.value), style: Object.assign({}, inputStyle, { fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 6, textAlign: "center" }), maxLength: 6 }),
     h("input", { placeholder: "Nueva contraseña", type: "password", value: newPassword, onChange: (e) => setNewPassword(e.target.value), style: inputStyle }),
-    error ? h("p", { style: { color: "#D98B7A", fontSize: 13, margin: 0 } }, error) : null,
-    h("button", { type: "submit", disabled: loading, style: primaryButton }, loading ? "Guardando…" : "Cambiar contraseña"),
-    h("button", { type: "button", onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%" }) }, "Volver")
+    error ? h("p", { style: { color: colors.red, fontSize: 13, margin: 0 } }, error) : null,
+    h("button", { className: "btn-primary", type: "submit", disabled: loading, style: primaryButton }, loading ? "Guardando…" : "Cambiar contraseña"),
+    h("button", { className: "btn-ghost", type: "button", onClick: props.onBack, style: Object.assign({}, toggleButton, { width: "100%" }) }, "Volver")
   );
 }
 
@@ -204,61 +290,81 @@ function AuthScreen(props) {
   };
 
   return h("div", {
-    style: { minHeight: "100vh", background: "#14110F", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Work Sans', sans-serif" }
+    style: {
+      minHeight: "100vh",
+      background: "radial-gradient(ellipse 1000px 600px at 50% -15%, rgba(198,150,63,0.14), transparent), radial-gradient(ellipse 700px 500px at 90% 110%, rgba(107,42,58,0.18), transparent), " + colors.bg,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+      fontFamily: "'Work Sans', sans-serif",
+    }
   },
-    h("div", { style: { width: "100%", maxWidth: 360 } },
-      h("div", { style: { textAlign: "center", marginBottom: 36 } },
-        h(Logo, { size: 40 }),
-        h("p", { style: { color: "#B98B3E", fontSize: 14, marginTop: 8, letterSpacing: "0.02em" } }, "Tu deseo, tu precio.")
+    h("div", { style: { width: "100%", maxWidth: 380 }, className: "fade-in" },
+      h("div", { style: { textAlign: "center", marginBottom: 32 } },
+        h(Logo, { size: 52 }),
+        h(Ornament),
+        h("p", { style: { color: colors.inkSoft, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 16, margin: 0, opacity: 0.85 } }, "Tu deseo, tu precio")
       ),
-      (mode === "login" || mode === "register") ? h("div", { style: { display: "flex", marginBottom: 24, borderBottom: "1px solid #2A241C" } },
-        ["login", "register"].map((m) =>
-          h("button", {
-            key: m,
-            onClick: () => setMode(m),
-            style: { flex: 1, background: "none", border: "none", padding: "10px 0", color: mode === m ? "#F1E9DC" : "#8A7B63", borderBottom: mode === m ? "2px solid #B98B3E" : "2px solid transparent", fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500, cursor: "pointer" }
-          }, m === "login" ? "Iniciar sesión" : "Crear cuenta")
+      h("div", {
+        style: {
+          background: colors.bgRaised,
+          border: "1px solid " + colors.border,
+          borderRadius: 10,
+          padding: "30px 26px",
+          boxShadow: "0 20px 50px rgba(0,0,0,0.35)",
+        }
+      },
+        (mode === "login" || mode === "register") ? h("div", { style: { display: "flex", marginBottom: 26, borderBottom: "1px solid " + colors.border } },
+          ["login", "register"].map((m) =>
+            h("button", {
+              key: m,
+              onClick: () => setMode(m),
+              style: { flex: 1, background: "none", border: "none", padding: "10px 0", color: mode === m ? colors.ink : colors.muted, borderBottom: mode === m ? "2px solid " + colors.gold : "2px solid transparent", fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer", transition: "color 0.15s ease" }
+            }, m === "login" ? "Iniciar sesión" : "Crear cuenta")
+          )
+        ) : null,
+        notice ? h("p", { style: { color: colors.green, fontSize: 13, textAlign: "center", marginBottom: 12 } }, notice) : null,
+        mode === "forgot" ? h(ForgotPasswordScreen, {
+          onBack: () => setMode("login"),
+          onHaveCode: (email) => { setForm(Object.assign({}, form, { email: email })); setMode("reset"); }
+        }) : mode === "reset" ? h(ResetPasswordScreen, {
+          email: form.email,
+          onBack: () => setMode("login"),
+          onDone: () => { setNotice("Contraseña actualizada. Ya puedes iniciar sesión."); setMode("login"); }
+        }) : h("form", { onSubmit: submit, style: { display: "flex", flexDirection: "column", gap: 12 } },
+          mode === "register" ? h("input", {
+            placeholder: "Nombre de usuario",
+            value: form.username,
+            onChange: (e) => setForm(Object.assign({}, form, { username: e.target.value })),
+            style: inputStyle
+          }) : null,
+          h("input", {
+            placeholder: "Correo electrónico",
+            type: "email",
+            value: form.email,
+            onChange: (e) => setForm(Object.assign({}, form, { email: e.target.value })),
+            style: inputStyle
+          }),
+          h("input", {
+            placeholder: "Contraseña",
+            type: "password",
+            value: form.password,
+            onChange: (e) => setForm(Object.assign({}, form, { password: e.target.value })),
+            style: inputStyle
+          }),
+          error ? h("p", { style: { color: colors.red, fontSize: 13, margin: 0 } }, error) : null,
+          h("button", { className: "btn-primary", type: "submit", disabled: loading, style: primaryButton },
+            loading ? "Un momento…" : mode === "login" ? "Entrar" : "Crear mi cuenta"
+          ),
+          mode === "login" ? h("button", {
+            type: "button",
+            onClick: () => setMode("forgot"),
+            style: { background: "none", border: "none", color: colors.muted, fontSize: 13, cursor: "pointer", textAlign: "center", marginTop: 4 }
+          }, "¿Olvidaste tu contraseña?") : null
         )
-      ) : null,
-      notice ? h("p", { style: { color: "#8FBF8F", fontSize: 13, textAlign: "center", marginBottom: 12 } }, notice) : null,
-      mode === "forgot" ? h(ForgotPasswordScreen, {
-        onBack: () => setMode("login"),
-        onHaveCode: (email) => { setForm(Object.assign({}, form, { email: email })); setMode("reset"); }
-      }) : mode === "reset" ? h(ResetPasswordScreen, {
-        email: form.email,
-        onBack: () => setMode("login"),
-        onDone: () => { setNotice("Contraseña actualizada. Ya puedes iniciar sesión."); setMode("login"); }
-      }) : h("form", { onSubmit: submit, style: { display: "flex", flexDirection: "column", gap: 12 } },
-        mode === "register" ? h("input", {
-          placeholder: "Nombre de usuario",
-          value: form.username,
-          onChange: (e) => setForm(Object.assign({}, form, { username: e.target.value })),
-          style: inputStyle
-        }) : null,
-        h("input", {
-          placeholder: "Correo electrónico",
-          type: "email",
-          value: form.email,
-          onChange: (e) => setForm(Object.assign({}, form, { email: e.target.value })),
-          style: inputStyle
-        }),
-        h("input", {
-          placeholder: "Contraseña",
-          type: "password",
-          value: form.password,
-          onChange: (e) => setForm(Object.assign({}, form, { password: e.target.value })),
-          style: inputStyle
-        }),
-        error ? h("p", { style: { color: "#D98B7A", fontSize: 13, margin: 0 } }, error) : null,
-        h("button", { type: "submit", disabled: loading, style: primaryButton },
-          loading ? "Un momento…" : mode === "login" ? "Entrar" : "Crear mi cuenta"
-        ),
-        mode === "login" ? h("button", {
-          type: "button",
-          onClick: () => setMode("forgot"),
-          style: { background: "none", border: "none", color: "#8A7B63", fontSize: 13, cursor: "pointer", textAlign: "center", marginTop: 4 }
-        }, "¿Olvidaste tu contraseña?") : null
-      )
+      ),
+      h("p", { style: { textAlign: "center", color: colors.mutedDeep, fontSize: 11, letterSpacing: "0.14em", marginTop: 28 } }, "DESEO · CONTENIDO CON DUEÑO")
     )
   );
 }
@@ -332,37 +438,37 @@ function CommentSection(props) {
     }
   };
 
-  return h("div", { style: { borderTop: "1px solid #2A241C" } },
+  return h("div", { style: { borderTop: "1px solid " + colors.border } },
     h("button", {
       onClick: toggle,
-      style: { width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "10px 16px", color: "#8A7B63", fontFamily: "'Work Sans', sans-serif", fontSize: 13, cursor: "pointer" }
+      style: { width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "10px 16px", color: colors.muted, fontFamily: "'Work Sans', sans-serif", fontSize: 13, cursor: "pointer" }
     }, open ? "Ocultar comentarios" : "Ver comentarios (" + props.count + ")"),
-    open ? h("div", { style: { padding: "0 16px 14px" } },
+    open ? h("div", { style: { padding: "0 16px 14px" }, className: "fade-in" },
       h("form", { onSubmit: send, style: { display: "flex", gap: 8, marginBottom: 12 } },
         h("input", {
           placeholder: "Escribe un comentario…",
           value: text,
           onChange: (e) => setText(e.target.value),
-          style: Object.assign({}, inputStyle, { flex: 1, padding: "8px 10px", fontSize: 13 })
+          style: Object.assign({}, inputStyle, { flex: 1, padding: "8px 10px", fontSize: 13, width: "auto" })
         }),
-        h("button", { type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, toggleButton, { padding: "8px 14px" }) }, sending ? "…" : "Enviar")
+        h("button", { className: "btn-ghost", type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, toggleButton, { padding: "8px 14px" }) }, sending ? "…" : "Enviar")
       ),
-      error ? h("p", { style: { color: "#D98B7A", fontSize: 12, margin: "0 0 8px" } }, error) : null,
-      loading ? h("p", { style: { color: "#8A7B63", fontSize: 13 } }, "Cargando comentarios…") : null,
-      !loading && comments.length === 0 ? h("p", { style: { color: "#8A7B63", fontSize: 13 } }, "Sé la primera persona en comentar.") : null,
+      error ? h("p", { style: { color: colors.red, fontSize: 12, margin: "0 0 8px" } }, error) : null,
+      loading ? h("p", { style: { color: colors.muted, fontSize: 13 } }, "Cargando comentarios…") : null,
+      !loading && comments.length === 0 ? h("p", { style: { color: colors.muted, fontSize: 13 } }, "Sé la primera persona en comentar.") : null,
       comments.map((c) =>
-        h("div", { key: c.id, style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "8px 0", borderTop: "1px solid #241f18" } },
+        h("div", { key: c.id, style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "8px 0", borderTop: "1px solid " + colors.borderSoft } },
           h("div", null,
             h("div", { style: { display: "flex", gap: 8, alignItems: "baseline" } },
-              h("span", { style: { color: "#F1E9DC", fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 500 } }, "@" + c.author),
-              h("span", { style: { color: "#5C4F3E", fontSize: 11 } }, timeAgo(c.createdAt))
+              h("span", { style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 500 } }, "@" + c.author),
+              h("span", { style: { color: colors.mutedDeep, fontSize: 11 } }, timeAgo(c.createdAt))
             ),
-            h("p", { style: { color: "#D8CDBB", fontFamily: "'Work Sans', sans-serif", fontSize: 13, margin: "2px 0 0" } }, c.content)
+            h("p", { style: { color: colors.inkSoft, fontFamily: "'Work Sans', sans-serif", fontSize: 13, margin: "2px 0 0" } }, c.content)
           ),
           c.mine ? h("button", {
             onClick: () => remove(c.id),
             title: "Borrar",
-            style: { background: "none", border: "none", color: "#5C4F3E", cursor: "pointer", fontSize: 12, padding: 0 }
+            style: { background: "none", border: "none", color: colors.mutedDeep, cursor: "pointer", fontSize: 12, padding: 0 }
           }, "✕") : null
         )
       )
@@ -387,30 +493,49 @@ function PostCard(props) {
     }
   };
 
-  return h("div", { style: { background: "#1D1812", border: "1px solid #2A241C", borderRadius: 6, overflow: "hidden", marginBottom: 16 } },
-    h("div", { style: { padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" } },
-      h("span", { style: { color: "#F1E9DC", fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500 } }, "@" + post.author),
+  return h("div", { className: "post-card", style: { background: colors.bgRaised, border: "1px solid " + colors.border, borderRadius: 8, overflow: "hidden", marginBottom: 18 } },
+    h("div", { style: { padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      h("span", { style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500 } }, "@" + post.author),
       post.priceCents > 0 ? h(TicketPrice, { cents: post.priceCents }) : null
     ),
-    h("div", { style: { height: 260, background: "#14110F", display: "flex", alignItems: "center", justifyContent: "center" } },
+    h("div", {
+      style: { height: 280, background: colors.bgDeep, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" },
+      onContextMenu: blockContextMenu
+    },
       post.unlocked && post.mediaUrl
         ? (post.mediaType === "video"
-            ? h("video", { src: post.mediaUrl, controls: true, style: { maxHeight: "100%", maxWidth: "100%" } })
-            : h("img", { src: post.mediaUrl, alt: "", style: { maxHeight: "100%", maxWidth: "100%", objectFit: "contain" } }))
-        : h("div", { style: { textAlign: "center", color: "#8A7B63", fontFamily: "'Work Sans', sans-serif" } },
-            h("div", { style: { fontSize: 28, marginBottom: 8 } }, "\u25D0"),
-            h("div", { style: { fontSize: 13 } }, "Contenido bloqueado")
+            ? h("video", {
+                src: post.mediaUrl,
+                controls: true,
+                controlsList: "nodownload noremoteplayback",
+                disablePictureInPicture: true,
+                onContextMenu: blockContextMenu,
+                className: "media-protected",
+                style: { maxHeight: "100%", maxWidth: "100%" }
+              })
+            : h("img", {
+                src: post.mediaUrl,
+                alt: "",
+                draggable: false,
+                onContextMenu: blockContextMenu,
+                className: "media-protected",
+                style: { maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }
+              }))
+        : h("div", { style: { textAlign: "center", color: colors.muted, fontFamily: "'Work Sans', sans-serif" } },
+            h("div", { style: { fontSize: 30, marginBottom: 8, color: colors.gold } }, "\u25D0"),
+            h("div", { style: { fontSize: 13, letterSpacing: "0.04em" } }, "Contenido bloqueado")
           )
     ),
-    post.caption ? h("p", { style: { padding: "12px 16px 4px", color: "#F1E9DC", fontFamily: "'Work Sans', sans-serif", fontSize: 14, margin: 0 } }, post.caption) : null,
-    h("div", { style: { display: "flex", gap: 4, padding: "10px 16px 14px", flexWrap: "wrap" } },
+    post.caption ? h("p", { style: { padding: "13px 16px 4px", color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, margin: 0, lineHeight: 1.5 } }, post.caption) : null,
+    h("div", { style: { display: "flex", gap: 4, padding: "11px 16px 14px", flexWrap: "wrap" } },
       REACTIONS.map((r) =>
         h("button", {
           key: r.key,
+          className: "reaction-btn",
           onClick: () => react(r.key),
           disabled: reacting,
           title: r.label,
-          style: { background: myReaction === r.key ? "#B98B3E" : "transparent", border: "1px solid #2A241C", borderRadius: 4, padding: "4px 8px", color: myReaction === r.key ? "#14110F" : "#8A7B63", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }
+          style: { background: myReaction === r.key ? colors.gold : "transparent", border: "1px solid " + colors.border, borderRadius: 4, padding: "4px 8px", color: myReaction === r.key ? "#1A1112" : colors.muted, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }
         },
           h("span", null, r.glyph),
           h("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 } }, (post.reactions && post.reactions[r.key]) || 0)
@@ -470,25 +595,25 @@ function CreatePostScreen(props) {
   };
 
   return h("div", { style: { padding: 20, fontFamily: "'Work Sans', sans-serif" } },
-    h("h2", { style: { fontFamily: "'Fraunces', serif", color: "#F1E9DC", fontWeight: 600, fontSize: 22, marginBottom: 20 } }, "Nueva publicación"),
-    h("label", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: 200, background: "#1D1812", border: "1px dashed #2A241C", borderRadius: 6, cursor: "pointer", marginBottom: 16, overflow: "hidden" } },
+    h("h2", { style: { fontFamily: "'Fraunces', serif", fontStyle: "italic", color: colors.ink, fontWeight: 600, fontSize: 26, marginBottom: 20 } }, "Nueva publicación"),
+    h("label", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: 200, background: colors.bgRaised, border: "1px dashed " + colors.border, borderRadius: 8, cursor: "pointer", marginBottom: 16, overflow: "hidden" } },
       preview
         ? (file && file.type.startsWith("video")
             ? h("video", { src: preview, style: { maxHeight: "100%", maxWidth: "100%" } })
             : h("img", { src: preview, alt: "", style: { maxHeight: "100%", maxWidth: "100%", objectFit: "contain" } }))
-        : h("span", { style: { color: "#8A7B63", fontSize: 14 } }, "Toca para elegir foto o video"),
+        : h("span", { style: { color: colors.muted, fontSize: 14 } }, "Toca para elegir foto o video"),
       h("input", { type: "file", accept: "image/*,video/*", onChange: pickFile, style: { display: "none" } })
     ),
-    h("textarea", { placeholder: "Escribe una descripción…", value: caption, onChange: (e) => setCaption(e.target.value), rows: 3, style: Object.assign({}, inputStyle, { width: "100%", boxSizing: "border-box", resize: "vertical", marginBottom: 16 }) }),
+    h("textarea", { placeholder: "Escribe una descripción…", value: caption, onChange: (e) => setCaption(e.target.value), rows: 3, style: Object.assign({}, inputStyle, { resize: "vertical", marginBottom: 16 }) }),
     h("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
-      h("button", { onClick: () => setIsFree(true), style: Object.assign({}, toggleButton, { background: isFree ? "#B98B3E" : "transparent", color: isFree ? "#14110F" : "#8A7B63" }) }, "Gratis"),
-      h("button", { onClick: () => setIsFree(false), style: Object.assign({}, toggleButton, { background: !isFree ? "#B98B3E" : "transparent", color: !isFree ? "#14110F" : "#8A7B63" }) }, "De pago"),
+      h("button", { className: "btn-ghost", onClick: () => setIsFree(true), style: Object.assign({}, toggleButton, { background: isFree ? colors.gold : "transparent", color: isFree ? "#1A1112" : colors.muted, borderColor: isFree ? colors.gold : colors.border }) }, "Gratis"),
+      h("button", { className: "btn-ghost", onClick: () => setIsFree(false), style: Object.assign({}, toggleButton, { background: !isFree ? colors.gold : "transparent", color: !isFree ? "#1A1112" : colors.muted, borderColor: !isFree ? colors.gold : colors.border }) }, "De pago"),
       !isFree ? h("input", { type: "number", min: "0.5", step: "0.5", value: price, onChange: (e) => setPrice(e.target.value), style: Object.assign({}, inputStyle, { width: 90 }) }) : null
     ),
-    error ? h("p", { style: { color: "#D98B7A", fontSize: 13 } }, error) : null,
+    error ? h("p", { style: { color: colors.red, fontSize: 13 } }, error) : null,
     h("div", { style: { display: "flex", gap: 10 } },
-      h("button", { onClick: props.onCancel, style: Object.assign({}, toggleButton, { flex: 1 }) }, "Cancelar"),
-      h("button", { onClick: submit, disabled: uploading, style: Object.assign({}, primaryButton, { flex: 2, marginTop: 0 }) }, uploading ? "Publicando…" : "Publicar")
+      h("button", { className: "btn-ghost", onClick: props.onCancel, style: Object.assign({}, toggleButton, { flex: 1 }) }, "Cancelar"),
+      h("button", { className: "btn-primary", onClick: submit, disabled: uploading, style: Object.assign({}, primaryButton, { flex: 2, marginTop: 0 }) }, uploading ? "Publicando…" : "Publicar")
     )
   );
 }
@@ -521,21 +646,34 @@ function DeseoApp() {
     return h(AuthScreen, { onAuthed: (t, u) => { setToken(t); setUser(u); } });
   }
 
-  return h("div", { style: { background: "#14110F", minHeight: "100vh", fontFamily: "'Work Sans', sans-serif" } },
-    h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #2A241C" } },
-      h(Logo, { size: 22 }),
+  return h("div", { style: { background: colors.bg, minHeight: "100vh", fontFamily: "'Work Sans', sans-serif" } },
+    h("div", {
+      style: {
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "16px 22px", borderBottom: "1px solid " + colors.border,
+        background: "linear-gradient(180deg, rgba(198,150,63,0.06), transparent)",
+      }
+    },
+      h("div", { style: { display: "flex", alignItems: "baseline", gap: 12 } },
+        h(Logo, { size: 23 }),
+        h("span", { style: { color: colors.mutedDeep, fontSize: 11, letterSpacing: "0.1em" } }, "TU DESEO, TU PRECIO")
+      ),
       h("div", { style: { display: "flex", alignItems: "center", gap: 14 } },
-        h("span", { style: { color: "#8A7B63", fontSize: 13 } }, "@" + (user && user.username)),
+        h("span", { style: { color: colors.muted, fontSize: 13 } }, "@" + (user && user.username)),
         view === "feed"
-          ? h("button", { onClick: () => setView("create"), style: Object.assign({}, primaryButton, { margin: 0, padding: "8px 14px" }) }, "Publicar")
-          : h("button", { onClick: () => setView("feed"), style: Object.assign({}, toggleButton, { padding: "8px 14px" }) }, "Volver al feed")
+          ? h("button", { className: "btn-primary", onClick: () => setView("create"), style: Object.assign({}, primaryButton, { margin: 0, padding: "10px 18px" }) }, "Publicar")
+          : h("button", { className: "btn-ghost", onClick: () => setView("feed"), style: Object.assign({}, toggleButton, { padding: "10px 18px" }) }, "Volver al feed")
       )
     ),
     view === "feed"
       ? h("div", { style: { padding: 20, maxWidth: 480, margin: "0 auto" } },
-          loading ? h("p", { style: { color: "#8A7B63", textAlign: "center" } }, "Cargando…") : null,
-          error ? h("p", { style: { color: "#D98B7A", textAlign: "center" } }, error) : null,
-          (!loading && posts.length === 0) ? h("p", { style: { color: "#8A7B63", textAlign: "center", marginTop: 40 } }, "Todavía no hay publicaciones. Sé la primera en publicar.") : null,
+          loading ? h("p", { style: { color: colors.muted, textAlign: "center" } }, "Cargando…") : null,
+          error ? h("p", { style: { color: colors.red, textAlign: "center" } }, error) : null,
+          (!loading && posts.length === 0) ? h("div", { style: { textAlign: "center", marginTop: 60 } },
+            h("div", { style: { fontSize: 34, color: colors.gold, marginBottom: 12 } }, "◇"),
+            h("p", { style: { color: colors.muted, fontSize: 14, fontFamily: "'Fraunces', serif", fontStyle: "italic" } }, "Todavía no hay publicaciones."),
+            h("p", { style: { color: colors.mutedDeep, fontSize: 13 } }, "Sé la primera en publicar.")
+          ) : null,
           posts.map((p) => h(PostCard, { key: p.id, post: p, token: token, onReacted: loadFeed }))
         )
       : h("div", { style: { maxWidth: 480, margin: "0 auto" } },
