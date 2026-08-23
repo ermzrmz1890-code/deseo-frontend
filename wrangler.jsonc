@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "deseo-frontend",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "single-page-application"
+  }
+}
