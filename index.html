@@ -495,7 +495,10 @@ function PostCard(props) {
 
   return h("div", { className: "post-card", style: { background: colors.bgRaised, border: "1px solid " + colors.border, borderRadius: 8, overflow: "hidden", marginBottom: 18 } },
     h("div", { style: { padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" } },
-      h("span", { style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500 } }, "@" + post.author),
+      h("span", {
+        style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500, cursor: "pointer" },
+        onClick: () => props.onOpenProfile && props.onOpenProfile(post.authorId)
+      }, "@" + post.author),
       post.priceCents > 0 ? h(TicketPrice, { cents: post.priceCents }) : null
     ),
     h("div", {
@@ -618,6 +621,246 @@ function CreatePostScreen(props) {
   );
 }
 
+
+// ---------- Avatar ----------
+
+function Avatar(props) {
+  const size = props.size || 40;
+  const url = props.url;
+  const username = props.username || "";
+  return url
+    ? h("img", {
+        src: url, alt: "", style: { width: size, height: size, borderRadius: "50%", objectFit: "cover", border: "1px solid " + colors.border }
+      })
+    : h("div", {
+        style: {
+          width: size, height: size, borderRadius: "50%", background: colors.bgRaised,
+          border: "1px solid " + colors.border, display: "flex", alignItems: "center", justifyContent: "center",
+          color: colors.gold, fontFamily: "'Fraunces', serif", fontSize: size * 0.42, fontStyle: "italic"
+        }
+      }, username.charAt(0).toUpperCase());
+}
+
+// ---------- Botón de amistad ----------
+
+function FriendButton(props) {
+  const { status, requestId, busy, onSendRequest, onAccept, onDecline, onCancel, onUnfriend } = props;
+
+  if (status === "loading") {
+    return h("button", { className: "btn-ghost", disabled: true, style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "…");
+  }
+  if (status === "friends") {
+    return h("button", {
+      className: "btn-ghost", disabled: busy, onClick: () => onUnfriend(),
+      style: Object.assign({}, toggleButton, { padding: "9px 16px" })
+    }, busy ? "…" : "Amigos ✕");
+  }
+  if (status === "pending_sent") {
+    return h("button", {
+      className: "btn-ghost", disabled: busy, onClick: () => onCancel(requestId),
+      style: Object.assign({}, toggleButton, { padding: "9px 16px" })
+    }, busy ? "…" : "Solicitud enviada");
+  }
+  if (status === "pending_received") {
+    return h("div", { style: { display: "flex", gap: 8 } },
+      h("button", { className: "btn-primary", disabled: busy, onClick: () => onAccept(requestId), style: Object.assign({}, primaryButton, { margin: 0, padding: "9px 16px" }) }, busy ? "…" : "Aceptar"),
+      h("button", { className: "btn-ghost", disabled: busy, onClick: () => onDecline(requestId), style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Rechazar")
+    );
+  }
+  return h("button", {
+    className: "btn-primary", disabled: busy, onClick: () => onSendRequest(),
+    style: Object.assign({}, primaryButton, { margin: 0, padding: "9px 16px" })
+  }, busy ? "…" : "Agregar amigo");
+}
+
+// ---------- Pantalla de perfil ----------
+
+function ProfileScreen(props) {
+  const { userId, token, currentUser, onBack, onOpenChat, allPosts } = props;
+  const isMe = currentUser && currentUser.id === userId;
+
+  const [profile, setProfile] = useState(null);
+  const [tab, setTab] = useState("posts");
+  const [friendStatus, setFriendStatus] = useState("loading");
+  const [requestId, setRequestId] = useState(null);
+  const [friendBusy, setFriendBusy] = useState(false);
+  const [friendsList, setFriendsList] = useState(null);
+  const [friendsCount, setFriendsCount] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const data = isMe
+        ? { user: currentUser }
+        : await api("/auth/user/" + userId, { token: token });
+      setProfile(data.user);
+    } catch (e) {
+      setError(e.message);
+    }
+    try {
+      const fr = await api("/friends?userId=" + userId, { token: token });
+      setFriendsCount((fr.friends || []).length);
+      setFriendsList(fr.friends || []);
+    } catch (e) {}
+    if (!isMe) {
+      try {
+        const st = await api("/friends/status/" + userId, { token: token });
+        setFriendStatus(st.status);
+        setRequestId(st.requestId || null);
+      } catch (e) {
+        setFriendStatus("none");
+      }
+    }
+  }, [userId, token, isMe, currentUser]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const friendAction = async (fn) => {
+    setFriendBusy(true);
+    try { await fn(); await load(); } catch (e) { setError(e.message); } finally { setFriendBusy(false); }
+  };
+
+  const sendRequest = () => friendAction(() => api("/friends/request/" + userId, { token: token, method: "POST" }));
+  const acceptRequest = (id) => friendAction(() => api("/friends/accept/" + id, { token: token, method: "POST" }));
+  const declineRequest = (id) => friendAction(() => api("/friends/decline/" + id, { token: token, method: "POST" }));
+  const cancelRequest = (id) => friendAction(() => api("/friends/request/" + id, { token: token, method: "DELETE" }));
+  const unfriend = () => friendAction(() => api("/friends/" + userId, { token: token, method: "DELETE" }));
+
+  const openChat = async () => {
+    try {
+      const data = await api("/chat/conversations", { token: token, method: "POST", body: JSON.stringify({ withUserId: userId }) });
+      onOpenChat(data.conversationId, profile ? profile.username : "");
+    } catch (e) { setError(e.message); }
+  };
+
+  if (!profile) {
+    return h("div", { style: { padding: 40, textAlign: "center", color: colors.muted } }, error || "Cargando perfil…");
+  }
+
+  const myPosts = (allPosts || []).filter((p) => p.authorId === userId);
+
+  return h("div", { style: { maxWidth: 560, margin: "0 auto" } },
+    h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { margin: "16px 0 0 16px", padding: "6px 12px" }) }, "← Volver"),
+
+    h("div", { style: { height: 170, background: profile.coverPhotoUrl ? "url(" + profile.coverPhotoUrl + ") center/cover" : "linear-gradient(135deg, " + colors.wine + ", " + colors.bgDeep + ")", margin: "12px 16px 0", borderRadius: 8 } }),
+
+    h("div", { style: { padding: "0 20px", marginTop: -36, display: "flex", alignItems: "flex-end", gap: 16 } },
+      h(Avatar, { url: profile.avatarUrl, username: profile.username, size: 84 }),
+      h("div", { style: { flex: 1, paddingBottom: 4 } },
+        h("h2", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 24, margin: 0 } }, "@" + profile.username),
+        h("p", { style: { color: colors.muted, fontSize: 13, margin: "2px 0 0" } }, (friendsCount === null ? "…" : friendsCount) + " amigos")
+      )
+    ),
+
+    h("div", { style: { padding: "14px 20px 0", display: "flex", gap: 10 } },
+      !isMe ? h(FriendButton, {
+        status: friendStatus, requestId: requestId, busy: friendBusy,
+        onSendRequest: sendRequest, onAccept: acceptRequest, onDecline: declineRequest, onCancel: cancelRequest, onUnfriend: unfriend
+      }) : null,
+      !isMe ? h("button", { className: "btn-ghost", onClick: openChat, style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Mensaje") : null
+    ),
+
+    profile.bio ? h("p", { style: { padding: "14px 20px 0", color: colors.inkSoft, fontSize: 14, lineHeight: 1.6 } }, profile.bio) : null,
+
+    error ? h("p", { style: { padding: "8px 20px 0", color: colors.red, fontSize: 13 } }, error) : null,
+
+    h("div", { style: { display: "flex", gap: 4, padding: "18px 20px 0", borderBottom: "1px solid " + colors.border } },
+      ["posts", "info", "friends"].map((t) =>
+        h("button", {
+          key: t, className: "btn-ghost", onClick: () => setTab(t),
+          style: {
+            background: "transparent", border: "none", borderBottom: "2px solid " + (tab === t ? colors.gold : "transparent"),
+            color: tab === t ? colors.ink : colors.muted, padding: "10px 4px", marginRight: 20, fontSize: 14,
+            fontFamily: "'Work Sans', sans-serif", cursor: "pointer"
+          }
+        }, t === "posts" ? "Publicaciones" : t === "info" ? "Info" : "Amigos")
+      )
+    ),
+
+    h("div", { style: { padding: 20 } },
+      tab === "posts" ? (
+        myPosts.length === 0
+          ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Todavía no hay publicaciones visibles.")
+          : myPosts.map((p) => h(PostCard, { key: p.id, post: p, token: token, onReacted: () => {}, onOpenProfile: () => {} }))
+      ) : tab === "info" ? (
+        h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+          profile.location ? h("p", { style: { color: colors.inkSoft, fontSize: 14, margin: 0 } }, "📍 Vive en " + profile.location) : null,
+          profile.relationshipStatus ? h("p", { style: { color: colors.inkSoft, fontSize: 14, margin: 0 } }, "♡ " + profile.relationshipStatus) : null,
+          profile.createdAt ? h("p", { style: { color: colors.muted, fontSize: 13, margin: 0 } }, "En Deseo desde " + new Date(profile.createdAt).toLocaleDateString("es-SV", { year: "numeric", month: "long" })) : null,
+          (!profile.location && !profile.relationshipStatus) ? h("p", { style: { color: colors.muted, fontSize: 14 } }, "No hay información adicional.") : null
+        )
+      ) : (
+        !friendsList ? h("p", { style: { color: colors.muted } }, "Cargando…") :
+        friendsList.length === 0 ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Todavía no tiene amigos agregados.") :
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+          friendsList.map((f) => h("div", {
+            key: f.id, onClick: () => props.onOpenProfile(f.id),
+            style: { display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: 8, borderRadius: 6, border: "1px solid " + colors.border }
+          },
+            h(Avatar, { url: f.avatarUrl, username: f.username, size: 36 }),
+            h("span", { style: { color: colors.ink, fontSize: 14 } }, "@" + f.username)
+          ))
+        )
+      )
+    )
+  );
+}
+
+// ---------- Pantalla de mensajes (conversación 1 a 1) ----------
+
+function ChatScreen(props) {
+  const { conversationId, otherUsername, token, onBack } = props;
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api("/chat/conversations/" + conversationId + "/messages", { token: token });
+      setMessages(data.messages || []);
+    } catch (e) {} finally { setLoading(false); }
+  }, [conversationId, token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const send = async (e) => {
+    e.preventDefault();
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      await api("/chat/conversations/" + conversationId + "/messages", { token: token, method: "POST", body: JSON.stringify({ content: text.trim() }) });
+      setText("");
+      await load();
+    } catch (e) {} finally { setSending(false); }
+  };
+
+  return h("div", { style: { maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", height: "calc(100vh - 70px)" } },
+    h("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid " + colors.border } },
+      h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
+      h("span", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 17 } }, "@" + otherUsername)
+    ),
+    h("div", { style: { flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 } },
+      loading ? h("p", { style: { color: colors.muted, textAlign: "center" } }, "Cargando…") : null,
+      messages.map((m) => h("div", {
+        key: m.id,
+        style: {
+          alignSelf: m.sender_id === (props.myUserId) ? "flex-end" : "flex-start",
+          background: m.sender_id === props.myUserId ? colors.gold : colors.bgRaised,
+          color: m.sender_id === props.myUserId ? "#1A1112" : colors.ink,
+          padding: "8px 12px", borderRadius: 10, maxWidth: "75%", fontSize: 14
+        }
+      }, m.content))
+    ),
+    h("form", { onSubmit: send, style: { display: "flex", gap: 8, padding: 14, borderTop: "1px solid " + colors.border } },
+      h("input", { style: Object.assign({}, inputStyle, { padding: "10px 12px" }), placeholder: "Escribe un mensaje…", value: text, onChange: (e) => setText(e.target.value) }),
+      h("button", { className: "btn-primary", type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, primaryButton, { margin: 0, padding: "10px 16px" }) }, "Enviar")
+    )
+  );
+}
+
 function DeseoApp() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -625,6 +868,11 @@ function DeseoApp() {
   const [view, setView] = useState("feed");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [profileUserId, setProfileUserId] = useState(null);
+  const [chat, setChat] = useState(null);
+
+  const openProfile = (id) => { setProfileUserId(id); setView("profile"); };
+  const openChat = (conversationId, username) => { setChat({ id: conversationId, username: username }); setView("chat"); };
 
   const loadFeed = useCallback(async () => {
     if (!token) return;
@@ -659,7 +907,10 @@ function DeseoApp() {
         h("span", { style: { color: colors.mutedDeep, fontSize: 11, letterSpacing: "0.1em" } }, "TU DESEO, TU PRECIO")
       ),
       h("div", { style: { display: "flex", alignItems: "center", gap: 14 } },
-        h("span", { style: { color: colors.muted, fontSize: 13 } }, "@" + (user && user.username)),
+        h("span", {
+          style: { color: colors.muted, fontSize: 13, cursor: "pointer" },
+          onClick: () => user && openProfile(user.id)
+        }, "@" + (user && user.username)),
         view === "feed"
           ? h("button", { className: "btn-primary", onClick: () => setView("create"), style: Object.assign({}, primaryButton, { margin: 0, padding: "10px 18px" }) }, "Publicar")
           : h("button", { className: "btn-ghost", onClick: () => setView("feed"), style: Object.assign({}, toggleButton, { padding: "10px 18px" }) }, "Volver al feed")
@@ -674,11 +925,25 @@ function DeseoApp() {
             h("p", { style: { color: colors.muted, fontSize: 14, fontFamily: "'Fraunces', serif", fontStyle: "italic" } }, "Todavía no hay publicaciones."),
             h("p", { style: { color: colors.mutedDeep, fontSize: 13 } }, "Sé la primera en publicar.")
           ) : null,
-          posts.map((p) => h(PostCard, { key: p.id, post: p, token: token, onReacted: loadFeed }))
+          posts.map((p) => h(PostCard, { key: p.id, post: p, token: token, onReacted: loadFeed, onOpenProfile: openProfile }))
         )
-      : h("div", { style: { maxWidth: 480, margin: "0 auto" } },
+      : view === "create"
+      ? h("div", { style: { maxWidth: 480, margin: "0 auto" } },
           h(CreatePostScreen, { token: token, onCancel: () => setView("feed"), onCreated: () => { setView("feed"); loadFeed(); } })
         )
+      : view === "profile"
+      ? h(ProfileScreen, {
+          userId: profileUserId, token: token, currentUser: user, allPosts: posts,
+          onBack: () => setView("feed"),
+          onOpenChat: openChat,
+          onOpenProfile: openProfile
+        })
+      : view === "chat" && chat
+      ? h(ChatScreen, {
+          conversationId: chat.id, otherUsername: chat.username, token: token, myUserId: user && user.id,
+          onBack: () => setView("profile")
+        })
+      : null
   );
 }
 
