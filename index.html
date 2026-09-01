@@ -687,6 +687,9 @@ function ProfileScreen(props) {
   const [friendsList, setFriendsList] = useState(null);
   const [friendsCount, setFriendsCount] = useState(null);
   const [error, setError] = useState("");
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   const load = useCallback(async () => {
     setError("");
@@ -711,6 +714,10 @@ function ProfileScreen(props) {
       } catch (e) {
         setFriendStatus("none");
       }
+      try {
+        const bs = await api("/moderation/block/status/" + userId, { token: token });
+        setBlockedByMe(bs.blockedByMe);
+      } catch (e) {}
     }
   }, [userId, token, isMe, currentUser]);
 
@@ -726,6 +733,22 @@ function ProfileScreen(props) {
   const declineRequest = (id) => friendAction(() => api("/friends/decline/" + id, { token: token, method: "POST" }));
   const cancelRequest = (id) => friendAction(() => api("/friends/request/" + id, { token: token, method: "DELETE" }));
   const unfriend = () => friendAction(() => api("/friends/" + userId, { token: token, method: "DELETE" }));
+
+  const toggleBlock = async () => {
+    setShowMenu(false);
+    try {
+      if (blockedByMe) {
+        await api("/moderation/block/" + userId, { token: token, method: "DELETE" });
+      } else {
+        await api("/moderation/block/" + userId, { token: token, method: "POST" });
+      }
+      await load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const submitReport = async (reason) => {
+    await api("/moderation/report", { token: token, method: "POST", body: JSON.stringify({ reportedUserId: userId, reason: reason }) });
+  };
 
   const openChat = async () => {
     try {
@@ -753,14 +776,28 @@ function ProfileScreen(props) {
       )
     ),
 
-    h("div", { style: { padding: "14px 20px 0", display: "flex", gap: 10 } },
-      !isMe ? h(FriendButton, {
+    h("div", { style: { padding: "14px 20px 0", display: "flex", gap: 10, alignItems: "center" } },
+      !isMe && !blockedByMe ? h(FriendButton, {
         status: friendStatus, requestId: requestId, busy: friendBusy,
         onSendRequest: sendRequest, onAccept: acceptRequest, onDecline: declineRequest, onCancel: cancelRequest, onUnfriend: unfriend
       }) : null,
-      !isMe ? h("button", { className: "btn-ghost", onClick: openChat, style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Mensaje") : null,
-      isMe ? h("button", { className: "btn-ghost", onClick: () => props.onEditProfile(), style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Editar perfil") : null
+      !isMe && !blockedByMe ? h("button", { className: "btn-ghost", onClick: openChat, style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Mensaje") : null,
+      isMe ? h("button", { className: "btn-ghost", onClick: () => props.onEditProfile(), style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Editar perfil") : null,
+      !isMe ? h("div", { style: { position: "relative" } },
+        h("button", {
+          className: "btn-ghost", onClick: () => setShowMenu(!showMenu),
+          style: { background: "transparent", border: "1px solid " + colors.border, borderRadius: 6, padding: "9px 12px", color: colors.ink, cursor: "pointer" }
+        }, "⋮"),
+        showMenu ? h("div", {
+          style: { position: "absolute", right: 0, top: "110%", background: colors.bgRaised, border: "1px solid " + colors.border, borderRadius: 8, zIndex: 20, minWidth: 170, boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }
+        },
+          h("div", { onClick: toggleBlock, style: { padding: "10px 14px", cursor: "pointer", color: colors.ink, fontSize: 13, borderBottom: "1px solid " + colors.borderSoft } }, blockedByMe ? "Desbloquear" : "Bloquear"),
+          h("div", { onClick: () => { setShowMenu(false); setShowReport(true); }, style: { padding: "10px 14px", cursor: "pointer", color: colors.red, fontSize: 13 } }, "Reportar")
+        ) : null
+      ) : null
     ),
+    blockedByMe ? h("p", { style: { padding: "10px 20px 0", color: colors.muted, fontSize: 13 } }, "Bloqueaste a este usuario. No pueden verse el contenido ni escribirse.") : null,
+    showReport ? h(ReportModal, { onClose: () => setShowReport(false), onSubmit: submitReport }) : null,
 
     profile.bio ? h("p", { style: { padding: "14px 20px 0", color: colors.inkSoft, fontSize: 14, lineHeight: 1.6 } }, profile.bio) : null,
 
@@ -1188,6 +1225,34 @@ function SearchScreen(props) {
           ))
         )
       : null
+  );
+}
+
+
+// ---------- Modal de reporte ----------
+
+function ReportModal(props) {
+  const { onClose, onSubmit } = props;
+  const [reason, setReason] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!reason.trim()) { setError("Describe el motivo."); return; }
+    setSending(true);
+    try { await onSubmit(reason.trim()); onClose(); } catch (e) { setError(e.message); } finally { setSending(false); }
+  };
+
+  return h("div", { style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 } },
+    h("div", { style: { background: colors.bgRaised, border: "1px solid " + colors.border, borderRadius: 8, padding: 20, maxWidth: 360, width: "100%" } },
+      h("h3", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 18, margin: "0 0 12px" } }, "Reportar"),
+      h("textarea", { value: reason, onChange: (e) => setReason(e.target.value), rows: 3, placeholder: "¿Qué está pasando?", style: Object.assign({}, inputStyle, { resize: "vertical" }) }),
+      error ? h("p", { style: { color: colors.red, fontSize: 12, marginTop: 8 } }, error) : null,
+      h("div", { style: { display: "flex", gap: 10, marginTop: 14 } },
+        h("button", { className: "btn-ghost", onClick: onClose, style: Object.assign({}, toggleButton, { flex: 1 }) }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: submit, disabled: sending, style: Object.assign({}, primaryButton, { flex: 1, margin: 0 }) }, sending ? "…" : "Enviar")
+      )
+    )
   );
 }
 
