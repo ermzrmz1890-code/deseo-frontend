@@ -66,12 +66,14 @@
 <div id="root" class="grain"></div>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 
 const h = React.createElement;
 const { useState, useEffect, useCallback } = React;
 
 const API = "https://deseo-backend.onrender.com/api";
+const SOCKET_URL = "https://deseo-backend.onrender.com";
 
 const REACTIONS = [
   { key: "like", label: "Me gusta", glyph: "\u2661" },
@@ -926,6 +928,11 @@ function ChatScreen(props) {
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [error, setError] = useState("");
   const [presence, setPresence] = useState(null);
+  const [otherLastReadAt, setOtherLastReadAt] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const socketRef = React.useRef(null);
+  const typingTimeoutRef = React.useRef(null);
+  const lastTypingSentRef = React.useRef(0);
 
   useEffect(() => {
     if (!otherUserId) return;
@@ -935,15 +942,53 @@ function ChatScreen(props) {
     return () => clearInterval(iv);
   }, [otherUserId, token]);
 
+  const markRead = useCallback(() => {
+    api("/chat/conversations/" + conversationId + "/read", { token: token, method: "POST" }).catch(() => {});
+  }, [conversationId, token]);
+
+  // Conexión al socket para mensajes en tiempo real e indicador de "escribiendo…".
+  useEffect(() => {
+    const socket = io(SOCKET_URL, { auth: { token: token } });
+    socketRef.current = socket;
+
+    socket.on("connect", () => socket.emit("conversation:join", conversationId));
+
+    socket.on("message:new", (msg) => {
+      if (msg.conversation_id !== conversationId) return;
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : prev.concat([msg])));
+      if (msg.sender_id !== props.myUserId) markRead();
+    });
+
+    socket.on("typing", ({ conversationId: cid }) => {
+      if (cid !== conversationId) return;
+      setIsTyping(true);
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
+    });
+
+    return () => {
+      clearTimeout(typingTimeoutRef.current);
+      socket.disconnect();
+    };
+  }, [conversationId, token, markRead, props.myUserId]);
+
+  const notifyTyping = () => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2000) return;
+    lastTypingSentRef.current = now;
+    if (socketRef.current) socketRef.current.emit("typing", { conversationId: conversationId });
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api("/chat/conversations/" + conversationId + "/messages", { token: token });
       setMessages(data.messages || []);
+      setOtherLastReadAt(data.otherLastReadAt || null);
     } catch (e) {} finally { setLoading(false); }
   }, [conversationId, token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load().then(markRead); }, [load, markRead]);
 
   const send = async (e) => {
     e.preventDefault();
@@ -991,19 +1036,23 @@ function ChatScreen(props) {
       h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
       h("div", null,
         h("span", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 17, display: "block" } }, "@" + otherUsername),
-        otherUserId ? (() => {
-          const p = presenceLabel(presence);
-          return h("span", { style: { color: p.online ? colors.gold : colors.muted, fontSize: 11, display: "flex", alignItems: "center", gap: 4 } },
-            p.online ? h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: colors.gold, display: "inline-block" } }) : null,
-            p.text
-          );
-        })() : null
+        isTyping
+          ? h("span", { style: { color: colors.gold, fontSize: 11, fontStyle: "italic" } }, "escribiendo…")
+          : (otherUserId ? (() => {
+              const p = presenceLabel(presence);
+              return h("span", { style: { color: p.online ? colors.gold : colors.muted, fontSize: 11, display: "flex", alignItems: "center", gap: 4 } },
+                p.online ? h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: colors.gold, display: "inline-block" } }) : null,
+                p.text
+              );
+            })() : null)
       )
     ),
     h("div", { style: { flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 } },
       loading ? h("p", { style: { color: colors.muted, textAlign: "center" } }, "Cargando…") : null,
-      messages.map((m) => {
+      messages.map((m, i) => {
         const mine = m.sender_id === props.myUserId;
+        const isLastMine = mine && !messages.slice(i + 1).some((mm) => mm.sender_id === props.myUserId);
+        const wasRead = otherLastReadAt && new Date(m.created_at) <= new Date(otherLastReadAt);
         return h("div", {
           key: m.id,
           style: { alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "75%", display: "flex", flexDirection: "column", gap: 4 }
@@ -1021,7 +1070,8 @@ function ChatScreen(props) {
               color: mine ? "#1A1112" : colors.ink,
               padding: "8px 12px", borderRadius: 10, fontSize: 14
             }
-          }, m.content) : null
+          }, m.content) : null,
+          isLastMine ? h("span", { style: { color: colors.muted, fontSize: 11, alignSelf: "flex-end" } }, wasRead ? "Visto" : "Enviado") : null
         );
       })
     ),
@@ -1034,7 +1084,7 @@ function ChatScreen(props) {
         uploadingMedia ? "…" : "📎",
         h("input", { type: "file", accept: "image/*,video/*", onChange: pickMedia, disabled: uploadingMedia, style: { display: "none" } })
       ),
-      h("input", { style: Object.assign({}, inputStyle, { padding: "10px 12px" }), placeholder: "Escribe un mensaje…", value: text, onChange: (e) => setText(e.target.value) }),
+      h("input", { style: Object.assign({}, inputStyle, { padding: "10px 12px" }), placeholder: "Escribe un mensaje…", value: text, onChange: (e) => { setText(e.target.value); notifyTyping(); } }),
       h("button", { className: "btn-primary", type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, primaryButton, { margin: 0, padding: "10px 16px" }) }, "Enviar")
     )
   );
