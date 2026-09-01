@@ -1631,6 +1631,99 @@ function StoryViewer(props) {
   );
 }
 
+
+// ---------- Encuestas ----------
+
+function PollBar(props) {
+  const { option, totalVotes, myVote, canVote, onVote } = props;
+  const pct = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
+  const isMine = myVote === option.id;
+  return h("div", {
+    onClick: canVote ? () => onVote(option.id) : undefined,
+    style: { position: "relative", border: "1px solid " + (isMine ? colors.gold : colors.border), borderRadius: 6, padding: "8px 12px", marginBottom: 8, cursor: canVote ? "pointer" : "default", overflow: "hidden" }
+  },
+    h("div", { style: { position: "absolute", left: 0, top: 0, bottom: 0, width: pct + "%", background: "rgba(198,150,63,0.15)", zIndex: 0 } }),
+    h("div", { style: { position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", color: colors.ink, fontSize: 13 } },
+      h("span", null, (isMine ? "✓ " : "") + option.label),
+      h("span", { style: { color: colors.muted } }, pct + "%")
+    )
+  );
+}
+
+function PollCard(props) {
+  const { poll, token, onVoted } = props;
+  const [voting, setVoting] = useState(false);
+
+  const vote = async (optionId) => {
+    setVoting(true);
+    try { await api("/polls/" + poll.id + "/vote", { token: token, method: "POST", body: JSON.stringify({ optionId: optionId }) }); onVoted(); } catch (e) {} finally { setVoting(false); }
+  };
+
+  return h("div", { style: { background: colors.bgRaised, border: "1px solid " + colors.border, borderRadius: 8, padding: 16, marginBottom: 16 } },
+    h("p", { style: { color: colors.muted, fontSize: 12, margin: "0 0 4px" } }, "@" + poll.author + " preguntó"),
+    h("p", { style: { color: colors.ink, fontSize: 15, margin: "0 0 12px", fontFamily: "'Fraunces', serif", fontStyle: "italic" } }, poll.question),
+    poll.options.map((o) => h(PollBar, { key: o.id, option: o, totalVotes: poll.totalVotes, myVote: poll.options.find((x) => x.myVote) ? poll.options.find((x) => x.myVote).id : null, canVote: !voting, onVote: vote })),
+    h("p", { style: { color: colors.muted, fontSize: 11, margin: "6px 0 0" } }, poll.totalVotes + " votos")
+  );
+}
+
+function PollsScreen(props) {
+  const { token, onBack } = props;
+  const [polls, setPolls] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(["", ""]);
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(() => {
+    api("/polls", { token: token }).then((d) => setPolls(d.polls || [])).catch(() => setPolls([]));
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const updateOption = (i, val) => setOptions(options.map((o, idx) => (idx === i ? val : o)));
+  const addOption = () => { if (options.length < 6) setOptions(options.concat([""])); };
+
+  const create = async () => {
+    setError("");
+    const clean = options.map((o) => o.trim()).filter(Boolean);
+    if (!question.trim()) { setError("Escribe una pregunta."); return; }
+    if (clean.length < 2) { setError("Agrega al menos 2 opciones."); return; }
+    setCreating(true);
+    try {
+      await api("/polls", { token: token, method: "POST", body: JSON.stringify({ question: question.trim(), options: clean }) });
+      setQuestion(""); setOptions(["", ""]); setShowCreate(false);
+      load();
+    } catch (e) { setError(e.message); } finally { setCreating(false); }
+  };
+
+  return h("div", { style: { maxWidth: 480, margin: "0 auto" } },
+    h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: 16 } },
+      h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+        h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
+        h("h2", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 20, margin: 0 } }, "Encuestas")
+      ),
+      h("button", { className: "btn-primary", onClick: () => setShowCreate(!showCreate), style: Object.assign({}, primaryButton, { margin: 0, padding: "8px 14px" }) }, showCreate ? "Cancelar" : "Nueva")
+    ),
+    showCreate ? h("div", { style: { padding: "0 16px 20px" } },
+      h("input", { placeholder: "Escribe tu pregunta…", value: question, onChange: (e) => setQuestion(e.target.value), style: Object.assign({}, inputStyle, { marginBottom: 10 }) }),
+      options.map((o, i) => h("input", {
+        key: i, placeholder: "Opción " + (i + 1), value: o, onChange: (e) => updateOption(i, e.target.value),
+        style: Object.assign({}, inputStyle, { marginBottom: 8 })
+      })),
+      options.length < 6 ? h("button", { className: "btn-ghost", onClick: addOption, style: Object.assign({}, toggleButton, { padding: "6px 12px", fontSize: 12, marginBottom: 10 }) }, "+ Agregar opción") : null,
+      error ? h("p", { style: { color: colors.red, fontSize: 12 } }, error) : null,
+      h("button", { className: "btn-primary", onClick: create, disabled: creating, style: Object.assign({}, primaryButton, { width: "100%" }) }, creating ? "Creando…" : "Publicar encuesta")
+    ) : null,
+    h("div", { style: { padding: "0 16px 20px" } },
+      !polls ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 20 } }, "Cargando…") :
+      polls.length === 0 ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Todavía no hay encuestas.") :
+      polls.map((p) => h(PollCard, { key: p.id, poll: p, token: token, onVoted: load }))
+    )
+  );
+}
+
 function DeseoApp() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -1686,6 +1779,10 @@ function DeseoApp() {
         h("span", { style: { color: colors.mutedDeep, fontSize: 11, letterSpacing: "0.1em" } }, "TU DESEO, TU PRECIO")
       ),
       h("div", { style: { display: "flex", alignItems: "center", gap: 14 } },
+        h("button", {
+          className: "btn-ghost", onClick: () => setView("polls"),
+          style: { background: "transparent", border: "1px solid " + colors.border, borderRadius: 6, padding: "8px 10px", color: colors.ink, cursor: "pointer" }
+        }, "📊"),
         h("button", {
           className: "btn-ghost", onClick: () => setView("search"),
           style: { background: "transparent", border: "1px solid " + colors.border, borderRadius: 6, padding: "8px 10px", color: colors.ink, cursor: "pointer" }
@@ -1753,6 +1850,11 @@ function DeseoApp() {
           token: token,
           onBack: () => setView("feed"),
           onOpenProfile: openProfile
+        })
+      : view === "polls"
+      ? h(PollsScreen, {
+          token: token,
+          onBack: () => setView("feed")
         })
       : null
   );
