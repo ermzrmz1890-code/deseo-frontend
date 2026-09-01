@@ -1132,6 +1132,65 @@ function InboxScreen(props) {
   );
 }
 
+
+// ---------- Buscador ----------
+
+function SearchScreen(props) {
+  const { token, onBack, onOpenProfile } = props;
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (query.trim().length < 2) { setResults(null); return; }
+    const handle = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const data = await api("/search?q=" + encodeURIComponent(query.trim()), { token: token });
+        setResults(data);
+      } catch (e) {} finally { setLoading(false); }
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [query, token]);
+
+  return h("div", { style: { maxWidth: 480, margin: "0 auto" } },
+    h("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: 16 } },
+      h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
+      h("input", {
+        autoFocus: true, style: Object.assign({}, inputStyle, { flex: 1 }),
+        placeholder: "Buscar personas o publicaciones…", value: query, onChange: (e) => setQuery(e.target.value)
+      })
+    ),
+    loading ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 20 } }, "Buscando…") : null,
+    !loading && query.trim().length >= 2 && results && results.users.length === 0 && results.posts.length === 0
+      ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Sin resultados.") : null,
+    results && results.users.length > 0
+      ? h("div", { style: { padding: "0 16px 10px" } },
+          h("p", { style: { color: colors.muted, fontSize: 12, letterSpacing: "0.05em", margin: "10px 0 8px" } }, "PERSONAS"),
+          results.users.map((u) => h("div", {
+            key: u.id, onClick: () => onOpenProfile(u.id),
+            style: { display: "flex", alignItems: "center", gap: 10, padding: "8px 0", cursor: "pointer" }
+          },
+            h(Avatar, { url: u.avatarUrl, username: u.username, size: 38 }),
+            h("span", { style: { color: colors.ink, fontSize: 14 } }, "@" + u.username)
+          ))
+        )
+      : null,
+    results && results.posts.length > 0
+      ? h("div", { style: { padding: "0 16px 20px" } },
+          h("p", { style: { color: colors.muted, fontSize: 12, letterSpacing: "0.05em", margin: "10px 0 8px" } }, "PUBLICACIONES"),
+          results.posts.map((p) => h("div", {
+            key: p.id, onClick: () => onOpenProfile(p.authorId),
+            style: { padding: "10px 0", borderBottom: "1px solid " + colors.borderSoft, cursor: "pointer" }
+          },
+            h("p", { style: { color: colors.muted, fontSize: 12, margin: 0 } }, "@" + p.author),
+            h("p", { style: { color: colors.inkSoft, fontSize: 14, margin: "3px 0 0" } }, p.caption || "(sin descripción)")
+          ))
+        )
+      : null
+  );
+}
+
 function DeseoApp() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -1178,6 +1237,10 @@ function DeseoApp() {
         h("span", { style: { color: colors.mutedDeep, fontSize: 11, letterSpacing: "0.1em" } }, "TU DESEO, TU PRECIO")
       ),
       h("div", { style: { display: "flex", alignItems: "center", gap: 14 } },
+        h("button", {
+          className: "btn-ghost", onClick: () => setView("search"),
+          style: { background: "transparent", border: "1px solid " + colors.border, borderRadius: 6, padding: "8px 10px", color: colors.ink, cursor: "pointer" }
+        }, "🔍"),
         h(NotificationBell, { token: token, onOpenProfile: openProfile }),
         h("button", {
           className: "btn-ghost", onClick: () => setView("inbox"),
@@ -1231,6 +1294,12 @@ function DeseoApp() {
           token: token, myUserId: user && user.id,
           onBack: () => setView("feed"),
           onOpenChat: openChat
+        })
+      : view === "search"
+      ? h(SearchScreen, {
+          token: token,
+          onBack: () => setView("feed"),
+          onOpenProfile: openProfile
         })
       : null
   );
