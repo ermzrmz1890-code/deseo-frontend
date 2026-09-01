@@ -391,6 +391,23 @@ function timeAgo(iso) {
   return days + " d";
 }
 
+function renderCommentContent(text, onOpenProfile, token) {
+  const parts = text.split(/(@[a-zA-Z0-9_]{1,30})/g);
+  return parts.map((part, i) => {
+    if (/^@[a-zA-Z0-9_]{1,30}$/.test(part)) {
+      return h("span", {
+        key: i, style: { color: colors.gold, cursor: "pointer" },
+        onClick: () => {
+          api("/auth/username/" + part.slice(1), { token: token })
+            .then((d) => onOpenProfile && onOpenProfile(d.user.id))
+            .catch(() => {});
+        }
+      }, part);
+    }
+    return part;
+  });
+}
+
 function CommentSection(props) {
   const postId = props.postId;
   const token = props.token;
@@ -401,6 +418,39 @@ function CommentSection(props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const [mentionResults, setMentionResults] = useState([]);
+
+  const handleTextChange = (e) => {
+    const val = e.target.value;
+    setText(val);
+    const cursor = e.target.selectionStart;
+    const upToCursor = val.slice(0, cursor);
+    const match = upToCursor.match(/@([a-zA-Z0-9_]{0,30})$/);
+    if (match) {
+      setMentionQuery(match[1]);
+    } else {
+      setMentionQuery(null);
+      setMentionResults([]);
+    }
+  };
+
+  useEffect(() => {
+    if (mentionQuery === null || mentionQuery.length < 1) { setMentionResults([]); return; }
+    const handle = setTimeout(() => {
+      api("/search?q=" + encodeURIComponent(mentionQuery), { token: token })
+        .then((d) => setMentionResults((d.users || []).slice(0, 5)))
+        .catch(() => {});
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [mentionQuery, token]);
+
+  const pickMention = (username) => {
+    const replaced = text.replace(/@([a-zA-Z0-9_]{0,30})$/, "@" + username + " ");
+    setText(replaced);
+    setMentionQuery(null);
+    setMentionResults([]);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -455,14 +505,27 @@ function CommentSection(props) {
       style: { width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "10px 16px", color: colors.muted, fontFamily: "'Work Sans', sans-serif", fontSize: 13, cursor: "pointer" }
     }, open ? "Ocultar comentarios" : "Ver comentarios (" + props.count + ")"),
     open ? h("div", { style: { padding: "0 16px 14px" }, className: "fade-in" },
-      h("form", { onSubmit: send, style: { display: "flex", gap: 8, marginBottom: 12 } },
-        h("input", {
-          placeholder: "Escribe un comentario…",
-          value: text,
-          onChange: (e) => setText(e.target.value),
-          style: Object.assign({}, inputStyle, { flex: 1, padding: "8px 10px", fontSize: 13, width: "auto" })
-        }),
-        h("button", { className: "btn-ghost", type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, toggleButton, { padding: "8px 14px" }) }, sending ? "…" : "Enviar")
+      h("div", { style: { position: "relative", marginBottom: 12 } },
+        h("form", { onSubmit: send, style: { display: "flex", gap: 8 } },
+          h("input", {
+            placeholder: "Escribe un comentario… usa @ para etiquetar",
+            value: text,
+            onChange: handleTextChange,
+            style: Object.assign({}, inputStyle, { flex: 1, padding: "8px 10px", fontSize: 13, width: "auto" })
+          }),
+          h("button", { className: "btn-ghost", type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, toggleButton, { padding: "8px 14px" }) }, sending ? "…" : "Enviar")
+        ),
+        mentionResults.length > 0 ? h("div", {
+          style: { position: "absolute", top: "100%", left: 0, right: 70, background: colors.bgRaised, border: "1px solid " + colors.border, borderRadius: 6, zIndex: 10, marginTop: 2 }
+        },
+          mentionResults.map((u) => h("div", {
+            key: u.id, onClick: () => pickMention(u.username),
+            style: { padding: "8px 10px", cursor: "pointer", color: colors.ink, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }
+          },
+            h(Avatar, { url: u.avatarUrl, username: u.username, size: 20 }),
+            "@" + u.username
+          ))
+        ) : null
       ),
       error ? h("p", { style: { color: colors.red, fontSize: 12, margin: "0 0 8px" } }, error) : null,
       loading ? h("p", { style: { color: colors.muted, fontSize: 13 } }, "Cargando comentarios…") : null,
@@ -474,7 +537,7 @@ function CommentSection(props) {
               h("span", { style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 500 } }, "@" + c.author),
               h("span", { style: { color: colors.mutedDeep, fontSize: 11 } }, timeAgo(c.createdAt))
             ),
-            h("p", { style: { color: colors.inkSoft, fontFamily: "'Work Sans', sans-serif", fontSize: 13, margin: "2px 0 0" } }, c.content)
+            h("p", { style: { color: colors.inkSoft, fontFamily: "'Work Sans', sans-serif", fontSize: 13, margin: "2px 0 0" } }, renderCommentContent(c.content, props.onOpenProfile, token))
           ),
           c.mine ? h("button", {
             onClick: () => remove(c.id),
@@ -595,7 +658,8 @@ function PostCard(props) {
       postId: post.id,
       token: token,
       count: commentCount,
-      onCountChange: (delta) => setCommentCount((c) => c + delta)
+      onCountChange: (delta) => setCommentCount((c) => c + delta),
+      onOpenProfile: props.onOpenProfile
     })
   );
 }
