@@ -816,6 +816,8 @@ function ChatScreen(props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -838,6 +840,36 @@ function ChatScreen(props) {
     } catch (e) {} finally { setSending(false); }
   };
 
+  const pickMedia = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setError("");
+    setUploadingMedia(true);
+    try {
+      const sig = await api("/uploads/signature", { token: token });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("api_key", sig.apiKey);
+      formData.append("timestamp", sig.timestamp);
+      formData.append("signature", sig.signature);
+      formData.append("folder", sig.folder);
+      const uploadRes = await fetch(sig.uploadUrl, { method: "POST", body: formData });
+      const uploaded = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error((uploaded.error && uploaded.error.message) || "Falló la subida.");
+      const mediaType = file.type.startsWith("video") ? "video" : "photo";
+      await api("/chat/conversations/" + conversationId + "/messages", {
+        token: token, method: "POST",
+        body: JSON.stringify({ mediaUrl: uploaded.secure_url, mediaType: mediaType })
+      });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
   return h("div", { style: { maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", height: "calc(100vh - 70px)" } },
     h("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid " + colors.border } },
       h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
@@ -845,17 +877,38 @@ function ChatScreen(props) {
     ),
     h("div", { style: { flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 } },
       loading ? h("p", { style: { color: colors.muted, textAlign: "center" } }, "Cargando…") : null,
-      messages.map((m) => h("div", {
-        key: m.id,
-        style: {
-          alignSelf: m.sender_id === (props.myUserId) ? "flex-end" : "flex-start",
-          background: m.sender_id === props.myUserId ? colors.gold : colors.bgRaised,
-          color: m.sender_id === props.myUserId ? "#1A1112" : colors.ink,
-          padding: "8px 12px", borderRadius: 10, maxWidth: "75%", fontSize: 14
-        }
-      }, m.content))
+      messages.map((m) => {
+        const mine = m.sender_id === props.myUserId;
+        return h("div", {
+          key: m.id,
+          style: { alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "75%", display: "flex", flexDirection: "column", gap: 4 }
+        },
+          m.media_url
+            ? h("div", { style: { borderRadius: 10, overflow: "hidden", border: "1px solid " + colors.border }, onContextMenu: blockContextMenu },
+                m.media_type === "video"
+                  ? h("video", { src: m.media_url, controls: true, controlsList: "nodownload noremoteplayback", disablePictureInPicture: true, onContextMenu: blockContextMenu, className: "media-protected", style: { maxWidth: "100%", maxHeight: 260, display: "block" } })
+                  : h("img", { src: m.media_url, alt: "", draggable: false, onContextMenu: blockContextMenu, className: "media-protected", style: { maxWidth: "100%", maxHeight: 260, display: "block", objectFit: "cover" } })
+              )
+            : null,
+          m.content ? h("div", {
+            style: {
+              background: mine ? colors.gold : colors.bgRaised,
+              color: mine ? "#1A1112" : colors.ink,
+              padding: "8px 12px", borderRadius: 10, fontSize: 14
+            }
+          }, m.content) : null
+        );
+      })
     ),
-    h("form", { onSubmit: send, style: { display: "flex", gap: 8, padding: 14, borderTop: "1px solid " + colors.border } },
+    error ? h("p", { style: { color: colors.red, fontSize: 12, padding: "0 16px" } }, error) : null,
+    h("form", { onSubmit: send, style: { display: "flex", gap: 8, padding: 14, borderTop: "1px solid " + colors.border, alignItems: "center" } },
+      h("label", {
+        style: { cursor: "pointer", color: colors.gold, fontSize: 20, padding: "4px 6px", opacity: uploadingMedia ? 0.5 : 1 },
+        title: "Enviar foto o video"
+      },
+        uploadingMedia ? "…" : "📎",
+        h("input", { type: "file", accept: "image/*,video/*", onChange: pickMedia, disabled: uploadingMedia, style: { display: "none" } })
+      ),
       h("input", { style: Object.assign({}, inputStyle, { padding: "10px 12px" }), placeholder: "Escribe un mensaje…", value: text, onChange: (e) => setText(e.target.value) }),
       h("button", { className: "btn-primary", type: "submit", disabled: sending || !text.trim(), style: Object.assign({}, primaryButton, { margin: 0, padding: "10px 16px" }) }, "Enviar")
     )
