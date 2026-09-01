@@ -758,7 +758,8 @@ function ProfileScreen(props) {
         status: friendStatus, requestId: requestId, busy: friendBusy,
         onSendRequest: sendRequest, onAccept: acceptRequest, onDecline: declineRequest, onCancel: cancelRequest, onUnfriend: unfriend
       }) : null,
-      !isMe ? h("button", { className: "btn-ghost", onClick: openChat, style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Mensaje") : null
+      !isMe ? h("button", { className: "btn-ghost", onClick: openChat, style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Mensaje") : null,
+      isMe ? h("button", { className: "btn-ghost", onClick: () => props.onEditProfile(), style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Editar perfil") : null
     ),
 
     profile.bio ? h("p", { style: { padding: "14px 20px 0", color: colors.inkSoft, fontSize: 14, lineHeight: 1.6 } }, profile.bio) : null,
@@ -861,6 +862,113 @@ function ChatScreen(props) {
   );
 }
 
+
+// ---------- Pantalla de editar perfil ----------
+
+function ImagePicker(props) {
+  // props: label, value (url actual), onUploaded(url), token, height, shape ("circle"|"rect")
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(props.value || null);
+  const [error, setError] = useState("");
+
+  const pick = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setError("");
+    setPreview(URL.createObjectURL(file));
+    setUploading(true);
+    try {
+      const sig = await api("/uploads/signature", { token: props.token });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("api_key", sig.apiKey);
+      formData.append("timestamp", sig.timestamp);
+      formData.append("signature", sig.signature);
+      formData.append("folder", sig.folder);
+      const uploadRes = await fetch(sig.uploadUrl, { method: "POST", body: formData });
+      const uploaded = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error((uploaded.error && uploaded.error.message) || "Falló la subida.");
+      props.onUploaded(uploaded.secure_url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const isCircle = props.shape === "circle";
+
+  return h("div", null,
+    h("label", {
+      style: {
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: props.height || 140, width: isCircle ? (props.height || 140) : "100%",
+        borderRadius: isCircle ? "50%" : 8,
+        background: preview ? "url(" + preview + ") center/cover" : colors.bgRaised,
+        border: "1px dashed " + colors.border, cursor: "pointer", overflow: "hidden", position: "relative"
+      }
+    },
+      !preview ? h("span", { style: { color: colors.muted, fontSize: 13, textAlign: "center", padding: 8 } }, props.label) : null,
+      uploading ? h("span", { style: { position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", color: colors.ink, fontSize: 12 } }, "Subiendo…") : null,
+      h("input", { type: "file", accept: "image/*", onChange: pick, style: { display: "none" } })
+    ),
+    error ? h("p", { style: { color: colors.red, fontSize: 12, marginTop: 4 } }, error) : null
+  );
+}
+
+function EditProfileScreen(props) {
+  const { token, user, onCancel, onSaved } = props;
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl || null);
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState(user.coverPhotoUrl || null);
+  const [bio, setBio] = useState(user.bio || "");
+  const [location, setLocation] = useState(user.location || "");
+  const [relationshipStatus, setRelationshipStatus] = useState(user.relationshipStatus || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const data = await api("/auth/me", {
+        token: token, method: "PATCH",
+        body: JSON.stringify({ avatarUrl: avatarUrl, coverPhotoUrl: coverPhotoUrl, bio: bio, location: location, relationshipStatus: relationshipStatus })
+      });
+      onSaved(data.user);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { style: { maxWidth: 480, margin: "0 auto", padding: 20 } },
+    h("h2", { style: { fontFamily: "'Fraunces', serif", fontStyle: "italic", color: colors.ink, fontSize: 24, marginBottom: 20 } }, "Editar perfil"),
+
+    h("p", { style: { color: colors.muted, fontSize: 13, marginBottom: 6 } }, "Foto de portada"),
+    h(ImagePicker, { label: "Toca para elegir portada", value: coverPhotoUrl, onUploaded: setCoverPhotoUrl, token: token, height: 130, shape: "rect" }),
+
+    h("p", { style: { color: colors.muted, fontSize: 13, margin: "18px 0 6px" } }, "Foto de perfil"),
+    h(ImagePicker, { label: "Elegir", value: avatarUrl, onUploaded: setAvatarUrl, token: token, height: 92, shape: "circle" }),
+
+    h("p", { style: { color: colors.muted, fontSize: 13, margin: "18px 0 6px" } }, "Biografía"),
+    h("textarea", { value: bio, onChange: (e) => setBio(e.target.value), rows: 3, placeholder: "Contá algo sobre vos…", style: Object.assign({}, inputStyle, { resize: "vertical" }) }),
+
+    h("p", { style: { color: colors.muted, fontSize: 13, margin: "18px 0 6px" } }, "Ubicación"),
+    h("input", { value: location, onChange: (e) => setLocation(e.target.value), placeholder: "Ej. San Salvador, El Salvador", style: inputStyle }),
+
+    h("p", { style: { color: colors.muted, fontSize: 13, margin: "18px 0 6px" } }, "Estado sentimental"),
+    h("input", { value: relationshipStatus, onChange: (e) => setRelationshipStatus(e.target.value), placeholder: "Ej. Soltera, En una relación…", style: inputStyle }),
+
+    error ? h("p", { style: { color: colors.red, fontSize: 13, marginTop: 12 } }, error) : null,
+
+    h("div", { style: { display: "flex", gap: 10, marginTop: 22 } },
+      h("button", { className: "btn-ghost", onClick: onCancel, style: Object.assign({}, toggleButton, { flex: 1 }) }, "Cancelar"),
+      h("button", { className: "btn-primary", onClick: save, disabled: saving, style: Object.assign({}, primaryButton, { flex: 2, marginTop: 0 }) }, saving ? "Guardando…" : "Guardar cambios")
+    )
+  );
+}
+
 function DeseoApp() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -936,12 +1044,19 @@ function DeseoApp() {
           userId: profileUserId, token: token, currentUser: user, allPosts: posts,
           onBack: () => setView("feed"),
           onOpenChat: openChat,
-          onOpenProfile: openProfile
+          onOpenProfile: openProfile,
+          onEditProfile: () => setView("editProfile")
         })
       : view === "chat" && chat
       ? h(ChatScreen, {
           conversationId: chat.id, otherUsername: chat.username, token: token, myUserId: user && user.id,
           onBack: () => setView("profile")
+        })
+      : view === "editProfile"
+      ? h(EditProfileScreen, {
+          token: token, user: user,
+          onCancel: () => setView("profile"),
+          onSaved: (updatedUser) => { setUser(updatedUser); setView("profile"); }
         })
       : null
   );
