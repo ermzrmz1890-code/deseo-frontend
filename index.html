@@ -753,7 +753,7 @@ function ProfileScreen(props) {
   const openChat = async () => {
     try {
       const data = await api("/chat/conversations", { token: token, method: "POST", body: JSON.stringify({ withUserId: userId }) });
-      onOpenChat(data.conversationId, profile ? profile.username : "");
+      onOpenChat(data.conversationId, profile ? profile.username : "", userId);
     } catch (e) { setError(e.message); }
   };
 
@@ -772,7 +772,16 @@ function ProfileScreen(props) {
       h(Avatar, { url: profile.avatarUrl, username: profile.username, size: 84 }),
       h("div", { style: { flex: 1, paddingBottom: 4 } },
         h("h2", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 24, margin: 0 } }, "@" + profile.username),
-        h("p", { style: { color: colors.muted, fontSize: 13, margin: "2px 0 0" } }, (friendsCount === null ? "…" : friendsCount) + " amigos")
+        h("p", { style: { color: colors.muted, fontSize: 13, margin: "2px 0 0", display: "flex", alignItems: "center", gap: 8 } },
+          (friendsCount === null ? "…" : friendsCount) + " amigos",
+          !isMe ? (() => {
+            const p = presenceLabel(profile.lastSeenAt);
+            return h("span", { style: { color: p.online ? colors.gold : colors.muted, display: "flex", alignItems: "center", gap: 4 } },
+              p.online ? h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: colors.gold, display: "inline-block" } }) : null,
+              p.text
+            );
+          })() : null
+        )
       )
     ),
 
@@ -847,14 +856,30 @@ function ProfileScreen(props) {
 
 // ---------- Pantalla de mensajes (conversación 1 a 1) ----------
 
+function presenceLabel(lastSeenAt) {
+  if (!lastSeenAt) return { online: false, text: "Sin conexión reciente" };
+  const diffMs = Date.now() - new Date(lastSeenAt).getTime();
+  if (diffMs < 60000) return { online: true, text: "En línea" };
+  return { online: false, text: "Visto " + timeAgo(lastSeenAt) };
+}
+
 function ChatScreen(props) {
-  const { conversationId, otherUsername, token, onBack } = props;
+  const { conversationId, otherUsername, otherUserId, token, onBack } = props;
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [error, setError] = useState("");
+  const [presence, setPresence] = useState(null);
+
+  useEffect(() => {
+    if (!otherUserId) return;
+    const loadPresence = () => api("/auth/user/" + otherUserId, { token: token }).then((d) => setPresence(d.user.lastSeenAt)).catch(() => {});
+    loadPresence();
+    const iv = setInterval(loadPresence, 20000);
+    return () => clearInterval(iv);
+  }, [otherUserId, token]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -910,7 +935,16 @@ function ChatScreen(props) {
   return h("div", { style: { maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", height: "calc(100vh - 70px)" } },
     h("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid " + colors.border } },
       h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
-      h("span", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 17 } }, "@" + otherUsername)
+      h("div", null,
+        h("span", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 17, display: "block" } }, "@" + otherUsername),
+        otherUserId ? (() => {
+          const p = presenceLabel(presence);
+          return h("span", { style: { color: p.online ? colors.gold : colors.muted, fontSize: 11, display: "flex", alignItems: "center", gap: 4 } },
+            p.online ? h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: colors.gold, display: "inline-block" } }) : null,
+            p.text
+          );
+        })() : null
+      )
     ),
     h("div", { style: { flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 } },
       loading ? h("p", { style: { color: colors.muted, textAlign: "center" } }, "Cargando…") : null,
@@ -1155,7 +1189,7 @@ function InboxScreen(props) {
         const other = (c.other_members && c.other_members[0]) || { id: null, username: "?" };
         const preview = c.last_message ? c.last_message.content : "Sin mensajes todavía.";
         return h("div", {
-          key: c.id, onClick: () => onOpenChat(c.id, other.username),
+          key: c.id, onClick: () => onOpenChat(c.id, other.username, other.id),
           style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid " + colors.borderSoft, cursor: "pointer" }
         },
           h(Avatar, { username: other.username, size: 42 }),
@@ -1267,7 +1301,7 @@ function DeseoApp() {
   const [chat, setChat] = useState(null);
 
   const openProfile = (id) => { setProfileUserId(id); setView("profile"); };
-  const openChat = (conversationId, username) => { setChat({ id: conversationId, username: username }); setView("chat"); };
+  const openChat = (conversationId, username, userId) => { setChat({ id: conversationId, username: username, userId: userId }); setView("chat"); };
 
   const loadFeed = useCallback(async () => {
     if (!token) return;
@@ -1284,6 +1318,14 @@ function DeseoApp() {
   }, [token]);
 
   useEffect(() => { if (token) loadFeed(); }, [token, loadFeed]);
+
+  useEffect(() => {
+    if (!token) return;
+    const beat = () => api("/auth/heartbeat", { token: token, method: "POST" }).catch(() => {});
+    beat();
+    const iv = setInterval(beat, 25000);
+    return () => clearInterval(iv);
+  }, [token]);
 
   if (!token) {
     return h(AuthScreen, { onAuthed: (t, u) => { setToken(t); setUser(u); } });
@@ -1345,7 +1387,7 @@ function DeseoApp() {
         })
       : view === "chat" && chat
       ? h(ChatScreen, {
-          conversationId: chat.id, otherUsername: chat.username, token: token, myUserId: user && user.id,
+          conversationId: chat.id, otherUsername: chat.username, otherUserId: chat.userId, token: token, myUserId: user && user.id,
           onBack: () => setView("profile")
         })
       : view === "editProfile"
