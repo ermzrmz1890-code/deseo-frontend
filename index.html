@@ -1437,7 +1437,7 @@ function EditProfileScreen(props) {
     try {
       const membershipPriceCents = membershipPrice.trim() === "" ? 0 : Math.round(Number(membershipPrice) * 100);
       const data = await api("/auth/me", {
-        token: token, method: "PATCH",
+        token: token, method: "POST",
         body: JSON.stringify({ avatarUrl: avatarUrl, coverPhotoUrl: coverPhotoUrl, bio: bio, location: location, relationshipStatus: relationshipStatus, membershipPriceCents: membershipPriceCents })
       });
       onSaved(data.user);
