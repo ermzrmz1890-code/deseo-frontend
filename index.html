@@ -1401,40 +1401,82 @@ function NotificationBell(props) {
 
 // ---------- Bandeja de mensajes ----------
 
+function ConversationRow(props) {
+  const { c, onOpenChat, isRequest, onAccept, onDecline, busy } = props;
+  const other = (c.other_members && c.other_members[0]) || { id: null, username: "?" };
+  const preview = c.last_message ? c.last_message.content : "Sin mensajes todavía.";
+  return h("div", {
+    style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid " + colors.borderSoft }
+  },
+    h("div", {
+      onClick: () => onOpenChat(c.id, other.username, other.id),
+      style: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, cursor: "pointer" }
+    },
+      h(Avatar, { username: other.username, size: 42 }),
+      h("div", { style: { flex: 1, minWidth: 0 } },
+        h("p", { style: { color: colors.ink, fontSize: 14, margin: 0 } }, "@" + other.username),
+        h("p", { style: { color: colors.muted, fontSize: 12, margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, preview)
+      )
+    ),
+    isRequest ? h("div", { style: { display: "flex", gap: 6, flexShrink: 0 } },
+      h("button", { className: "btn-primary", disabled: busy, onClick: () => onAccept(c.id), style: Object.assign({}, primaryButton, { margin: 0, padding: "6px 10px", fontSize: 12 }) }, "Aceptar"),
+      h("button", { className: "btn-ghost", disabled: busy, onClick: () => onDecline(c.id), style: Object.assign({}, toggleButton, { padding: "6px 10px", fontSize: 12 }) }, "Rechazar")
+    ) : null
+  );
+}
+
 function InboxScreen(props) {
   const { token, myUserId, onBack, onOpenChat } = props;
   const [conversations, setConversations] = useState(null);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState("messages");
+  const [busyId, setBusyId] = useState(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api("/chat/conversations", { token: token })
       .then((data) => setConversations(data.conversations || []))
       .catch((e) => setError(e.message));
   }, [token]);
 
+  useEffect(() => { load(); }, [load]);
+
+  const accept = async (id) => {
+    setBusyId(id);
+    try { await api("/chat/conversations/" + id + "/accept", { token: token, method: "POST" }); await load(); } catch (e) {} finally { setBusyId(null); }
+  };
+  const decline = async (id) => {
+    setBusyId(id);
+    try { await api("/chat/conversations/" + id + "/request", { token: token, method: "DELETE" }); await load(); } catch (e) {} finally { setBusyId(null); }
+  };
+
+  const messages = (conversations || []).filter((c) => !c.isRequest);
+  const requests = (conversations || []).filter((c) => c.isRequest);
+  const list = tab === "messages" ? messages : requests;
+
   return h("div", { style: { maxWidth: 480, margin: "0 auto" } },
-    h("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "16px" } },
+    h("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "16px 16px 0" } },
       h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
       h("h2", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 20, margin: 0 } }, "Mensajes")
     ),
-    error ? h("p", { style: { color: colors.red, fontSize: 13, padding: "0 16px" } }, error) : null,
+    h("div", { style: { display: "flex", gap: 4, padding: "14px 16px 0", borderBottom: "1px solid " + colors.border } },
+      ["messages", "requests"].map((t) =>
+        h("button", {
+          key: t, onClick: () => setTab(t),
+          style: {
+            background: "transparent", border: "none", borderBottom: "2px solid " + (tab === t ? colors.gold : "transparent"),
+            color: tab === t ? colors.ink : colors.muted, padding: "10px 4px", marginRight: 20, fontSize: 14,
+            fontFamily: "'Work Sans', sans-serif", cursor: "pointer"
+          }
+        }, t === "messages" ? "Mensajes" : "Solicitudes" + (requests.length > 0 ? " (" + requests.length + ")" : ""))
+      )
+    ),
+    error ? h("p", { style: { color: colors.red, fontSize: 13, padding: "12px 16px 0" } }, error) : null,
     !conversations ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Cargando…") :
-    conversations.length === 0 ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Todavía no tienes conversaciones.") :
+    list.length === 0 ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, tab === "messages" ? "Todavía no tienes conversaciones." : "No hay solicitudes pendientes.") :
     h("div", null,
-      conversations.map((c) => {
-        const other = (c.other_members && c.other_members[0]) || { id: null, username: "?" };
-        const preview = c.last_message ? c.last_message.content : "Sin mensajes todavía.";
-        return h("div", {
-          key: c.id, onClick: () => onOpenChat(c.id, other.username, other.id),
-          style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid " + colors.borderSoft, cursor: "pointer" }
-        },
-          h(Avatar, { username: other.username, size: 42 }),
-          h("div", { style: { flex: 1, minWidth: 0 } },
-            h("p", { style: { color: colors.ink, fontSize: 14, margin: 0 } }, "@" + other.username),
-            h("p", { style: { color: colors.muted, fontSize: 12, margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, preview)
-          )
-        );
-      })
+      list.map((c) => h(ConversationRow, {
+        key: c.id, c: c, onOpenChat: onOpenChat, isRequest: c.isRequest, onAccept: accept, onDecline: decline, busy: busyId === c.id
+      }))
     )
   );
 }
