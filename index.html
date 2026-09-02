@@ -601,8 +601,19 @@ function PostCard(props) {
   const [saved, setSaved] = useState(!!post.saved);
   const [savingToggle, setSavingToggle] = useState(false);
   const [showHeartAnim, setShowHeartAnim] = useState(false);
+  const [reposted, setReposted] = useState(!!post.reposted);
+  const [reposting, setReposting] = useState(false);
   const lastTapRef = React.useRef(0);
   const myReaction = post.myReaction;
+
+  const toggleRepost = async () => {
+    setReposting(true);
+    try {
+      if (reposted) await api("/posts/" + post.id + "/repost", { token: token, method: "DELETE" });
+      else await api("/posts/" + post.id + "/repost", { token: token, method: "POST" });
+      setReposted(!reposted);
+    } catch (e) {} finally { setReposting(false); }
+  };
 
   const handleMediaTap = () => {
     const now = Date.now();
@@ -636,6 +647,11 @@ function PostCard(props) {
   };
 
   return h("div", { className: "post-card", style: { background: colors.bgRaised, border: "1px solid " + colors.border, borderRadius: 8, overflow: "hidden", marginBottom: 18 } },
+    post.repostedBy ? h("div", {
+      style: { padding: "10px 16px 0", color: colors.muted, fontSize: 12, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" },
+      onClick: () => props.onOpenProfile && props.onOpenProfile(post.repostedBy.id)
+    }, "🔁 Repostado por @" + post.repostedBy.username) : null,
+    post.repostComment ? h("p", { style: { padding: "6px 16px 0", color: colors.inkSoft, fontSize: 13, margin: 0 } }, post.repostComment) : null,
     h("div", { style: { padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" } },
       h("span", {
         style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500, cursor: "pointer" },
@@ -643,6 +659,10 @@ function PostCard(props) {
       }, "@" + post.author),
       h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
         post.priceCents > 0 ? h(TicketPrice, { cents: post.priceCents }) : null,
+        h("button", {
+          onClick: toggleRepost, disabled: reposting, title: reposted ? "Deshacer repost" : "Repostear",
+          style: { background: "transparent", border: "none", color: reposted ? colors.gold : colors.muted, fontSize: 16, cursor: "pointer", padding: 0 }
+        }, "🔁"),
         h("button", {
           onClick: toggleSave, disabled: savingToggle, title: saved ? "Quitar de guardados" : "Guardar",
           style: { background: "transparent", border: "none", color: saved ? colors.gold : colors.muted, fontSize: 16, cursor: "pointer", padding: 0 }
