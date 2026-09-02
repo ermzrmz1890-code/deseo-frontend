@@ -863,6 +863,10 @@ function ProfileScreen(props) {
   const [savedPosts, setSavedPosts] = useState(null);
   const [suggestions, setSuggestions] = useState(null);
   const [sentTo, setSentTo] = useState({});
+  const [subActive, setSubActive] = useState(false);
+  const [subExpiresAt, setSubExpiresAt] = useState(null);
+  const [subscribing, setSubscribing] = useState(false);
+  const [subError, setSubError] = useState("");
 
   const load = useCallback(async () => {
     setError("");
@@ -891,6 +895,11 @@ function ProfileScreen(props) {
         const bs = await api("/moderation/block/status/" + userId, { token: token });
         setBlockedByMe(bs.blockedByMe);
       } catch (e) {}
+      try {
+        const ms = await api("/payments/membership/status/" + userId, { token: token });
+        setSubActive(ms.active);
+        setSubExpiresAt(ms.expiresAt);
+      } catch (e) {}
     }
   }, [userId, token, isMe, currentUser]);
 
@@ -913,6 +922,19 @@ function ProfileScreen(props) {
   const declineRequest = (id) => friendAction(() => api("/friends/decline/" + id, { token: token, method: "POST" }));
   const cancelRequest = (id) => friendAction(() => api("/friends/request/" + id, { token: token, method: "DELETE" }));
   const unfriend = () => friendAction(() => api("/friends/" + userId, { token: token, method: "DELETE" }));
+
+  const subscribe = async () => {
+    setSubscribing(true);
+    setSubError("");
+    try {
+      const result = await api("/payments/membership/" + userId, { token: token, method: "POST" });
+      if (result.paymentUrl) window.open(result.paymentUrl, "_blank");
+    } catch (e) {
+      setSubError(e.message);
+    } finally {
+      setSubscribing(false);
+    }
+  };
 
   const toggleBlock = async () => {
     setShowMenu(false);
@@ -965,12 +987,22 @@ function ProfileScreen(props) {
       )
     ),
 
-    h("div", { style: { padding: "14px 20px 0", display: "flex", gap: 10, alignItems: "center" } },
+    h("div", { style: { padding: "14px 20px 0", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" } },
       !isMe && !blockedByMe ? h(FriendButton, {
         status: friendStatus, requestId: requestId, busy: friendBusy,
         onSendRequest: sendRequest, onAccept: acceptRequest, onDecline: declineRequest, onCancel: cancelRequest, onUnfriend: unfriend
       }) : null,
       !isMe && !blockedByMe ? h("button", { className: "btn-ghost", onClick: openChat, style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Mensaje") : null,
+      !isMe && !blockedByMe && profile.membershipPriceCents > 0
+        ? (subActive
+            ? h("span", { style: { color: colors.gold, fontSize: 12, border: "1px solid " + colors.gold, borderRadius: 20, padding: "8px 14px" } }, "✓ Suscrita hasta " + new Date(subExpiresAt).toLocaleDateString("es-SV"))
+            : h("button", {
+                className: "btn-primary", disabled: subscribing, onClick: subscribe,
+                style: Object.assign({}, primaryButton, { margin: 0, padding: "9px 16px" })
+              }, subscribing ? "…" : "Suscribirme — $" + (profile.membershipPriceCents / 100).toFixed(2) + "/mes")
+          )
+        : null,
+      isMe && profile.membershipPriceCents > 0 ? h("button", { className: "btn-ghost", onClick: () => props.onViewTopFans(), style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Mis suscriptores") : null,
       isMe ? h("button", { className: "btn-ghost", onClick: () => props.onEditProfile(), style: Object.assign({}, toggleButton, { padding: "9px 16px" }) }, "Editar perfil") : null,
       !isMe ? h("div", { style: { position: "relative" } },
         h("button", {
@@ -985,6 +1017,7 @@ function ProfileScreen(props) {
         ) : null
       ) : null
     ),
+    subError ? h("p", { style: { padding: "8px 20px 0", color: colors.red, fontSize: 12 } }, subError) : null,
     blockedByMe ? h("p", { style: { padding: "10px 20px 0", color: colors.muted, fontSize: 13 } }, "Bloqueaste a este usuario. No pueden verse el contenido ni escribirse.") : null,
     showReport ? h(ReportModal, { onClose: () => setShowReport(false), onSubmit: submitReport }) : null,
 
@@ -1283,6 +1316,7 @@ function EditProfileScreen(props) {
   const [bio, setBio] = useState(user.bio || "");
   const [location, setLocation] = useState(user.location || "");
   const [relationshipStatus, setRelationshipStatus] = useState(user.relationshipStatus || "");
+  const [membershipPrice, setMembershipPrice] = useState(user.membershipPriceCents ? (user.membershipPriceCents / 100).toFixed(2) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1290,9 +1324,10 @@ function EditProfileScreen(props) {
     setSaving(true);
     setError("");
     try {
+      const membershipPriceCents = membershipPrice.trim() === "" ? 0 : Math.round(Number(membershipPrice) * 100);
       const data = await api("/auth/me", {
         token: token, method: "PATCH",
-        body: JSON.stringify({ avatarUrl: avatarUrl, coverPhotoUrl: coverPhotoUrl, bio: bio, location: location, relationshipStatus: relationshipStatus })
+        body: JSON.stringify({ avatarUrl: avatarUrl, coverPhotoUrl: coverPhotoUrl, bio: bio, location: location, relationshipStatus: relationshipStatus, membershipPriceCents: membershipPriceCents })
       });
       onSaved(data.user);
     } catch (e) {
@@ -1319,6 +1354,10 @@ function EditProfileScreen(props) {
 
     h("p", { style: { color: colors.muted, fontSize: 13, margin: "18px 0 6px" } }, "Estado sentimental"),
     h("input", { value: relationshipStatus, onChange: (e) => setRelationshipStatus(e.target.value), placeholder: "Ej. Soltera, En una relación…", style: inputStyle }),
+
+    h("p", { style: { color: colors.muted, fontSize: 13, margin: "18px 0 6px" } }, "Precio de membresía mensual (USD)"),
+    h("input", { type: "number", step: "0.01", min: "0", value: membershipPrice, onChange: (e) => setMembershipPrice(e.target.value), placeholder: "Ej. 9.99 (dejar vacío para no ofrecer membresía)", style: inputStyle }),
+    h("p", { style: { color: colors.muted, fontSize: 12, margin: "4px 0 0" } }, "Quien se suscribe ve automáticamente todas tus publicaciones de pago durante 30 días."),
 
     error ? h("p", { style: { color: colors.red, fontSize: 13, marginTop: 12 } }, error) : null,
 
@@ -1810,6 +1849,45 @@ function PollsScreen(props) {
   );
 }
 
+
+// ---------- Panel de suscriptores (top fans) ----------
+
+function TopFansScreen(props) {
+  const { token, onBack } = props;
+  const [subscribers, setSubscribers] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api("/payments/membership/subscribers", { token: token })
+      .then((d) => setSubscribers(d.subscribers || []))
+      .catch((e) => setError(e.message));
+  }, [token]);
+
+  return h("div", { style: { maxWidth: 480, margin: "0 auto" } },
+    h("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: 16 } },
+      h("button", { className: "btn-ghost", onClick: onBack, style: Object.assign({}, toggleButton, { padding: "6px 10px" }) }, "←"),
+      h("h2", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 20, margin: 0 } }, "Mis suscriptores")
+    ),
+    error ? h("p", { style: { color: colors.red, fontSize: 13, padding: "0 16px" } }, error) : null,
+    !subscribers ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Cargando…") :
+    subscribers.length === 0 ? h("p", { style: { color: colors.muted, textAlign: "center", marginTop: 30 } }, "Todavía no tienes suscriptores activos.") :
+    h("div", { style: { padding: "0 16px 20px" } },
+      h("p", { style: { color: colors.muted, fontSize: 13, margin: "0 0 14px" } }, subscribers.length + " suscriptor" + (subscribers.length === 1 ? "" : "es") + " activo" + (subscribers.length === 1 ? "" : "s")),
+      subscribers.map((s, i) => h("div", {
+        key: s.id,
+        style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid " + colors.borderSoft }
+      },
+        h("span", { style: { color: colors.gold, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, width: 22 } }, "#" + (i + 1)),
+        h(Avatar, { url: s.avatarUrl, username: s.username, size: 40 }),
+        h("div", { style: { flex: 1 } },
+          h("p", { style: { color: colors.ink, fontSize: 14, margin: 0 } }, "@" + s.username),
+          h("p", { style: { color: colors.muted, fontSize: 12, margin: "2px 0 0" } }, "Vence " + new Date(s.expiresAt).toLocaleDateString("es-SV"))
+        )
+      ))
+    )
+  );
+}
+
 function DeseoApp() {
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem("deseo_token") || null; } catch (e) { return null; }
@@ -1957,7 +2035,8 @@ function DeseoApp() {
           onBack: () => setView("feed"),
           onOpenChat: openChat,
           onOpenProfile: openProfile,
-          onEditProfile: () => setView("editProfile")
+          onEditProfile: () => setView("editProfile"),
+          onViewTopFans: () => setView("topFans")
         })
       : view === "chat" && chat
       ? h(ChatScreen, {
@@ -1986,6 +2065,11 @@ function DeseoApp() {
       ? h(PollsScreen, {
           token: token,
           onBack: () => setView("feed")
+        })
+      : view === "topFans"
+      ? h(TopFansScreen, {
+          token: token,
+          onBack: () => setView("profile")
         })
       : null
   );
