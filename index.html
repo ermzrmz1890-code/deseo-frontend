@@ -127,7 +127,13 @@ function runTusUpload(file, sig, onProgress, cacheKey, token) {
   return new Promise((resolve, reject) => {
     const upload = new tus.Upload(file, {
       endpoint: sig.tusEndpoint,
-      retryDelays: [0, 1000, 3000, 5000],
+      // Reintentos más largos y espaciados (igual a lo que recomienda Bunny)
+      // para tolerar hipos de wifi/datos móviles sin abortar la subida.
+      retryDelays: [0, 3000, 5000, 10000, 20000, 60000, 60000],
+      // Subir en trozos de 8 MB en vez del archivo entero de una vez: si se
+      // corta la conexión a mitad de camino, tus-js-client puede reintentar
+      // o reanudar solo el trozo que falló, no el video completo de nuevo.
+      chunkSize: 8 * 1024 * 1024,
       storeFingerprintForResuming: true,
       // tus-js-client guarda su PROPIO progreso guardado por archivo (nombre+
       // tamaño+fecha), separado de nuestro caché de firma. Si no incluimos el
