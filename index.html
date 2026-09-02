@@ -654,9 +654,9 @@ function PostCard(props) {
     post.repostComment ? h("p", { style: { padding: "6px 16px 0", color: colors.inkSoft, fontSize: 13, margin: 0 } }, post.repostComment) : null,
     h("div", { style: { padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" } },
       h("span", {
-        style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500, cursor: "pointer" },
+        style: { color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 500, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 },
         onClick: () => props.onOpenProfile && props.onOpenProfile(post.authorId)
-      }, "@" + post.author),
+      }, "@" + post.author, post.authorVerified ? h("span", { key: "v", style: { color: colors.gold, fontSize: 12 }, title: "Cuenta verificada" }, "✓") : null),
       h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
         post.priceCents > 0 ? h(TicketPrice, { cents: post.priceCents }) : null,
         h("button", {
@@ -951,7 +951,7 @@ function ProfileScreen(props) {
     h("div", { style: { padding: "0 20px", marginTop: -36, display: "flex", alignItems: "flex-end", gap: 16 } },
       h(Avatar, { url: profile.avatarUrl, username: profile.username, size: 84 }),
       h("div", { style: { flex: 1, paddingBottom: 4 } },
-        h("h2", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 24, margin: 0 } }, "@" + profile.username),
+        h("h2", { style: { color: colors.ink, fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 24, margin: 0, display: "flex", alignItems: "center", gap: 8 } }, "@" + profile.username, profile.isVerified ? h("span", { key: "v", style: { color: colors.gold, fontSize: 18 }, title: "Cuenta verificada" }, "✓") : null),
         h("p", { style: { color: colors.muted, fontSize: 13, margin: "2px 0 0", display: "flex", alignItems: "center", gap: 8 } },
           (friendsCount === null ? "…" : friendsCount) + " amigos",
           !isMe ? (() => {
