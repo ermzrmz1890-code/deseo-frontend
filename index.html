@@ -119,6 +119,38 @@ async function api(path, opts) {
 // Fotos: pasan por nuestro backend (proxy hacia Bunny Storage).
 // Videos: se suben directo desde el navegador a Bunny Stream (protocolo TUS),
 // así los archivos grandes no consumen el ancho de banda de nuestro servidor.
+// Corre (o reanuda) la subida TUS hacia Bunny Stream para un "sig" (datos de
+// sesión de subida) ya obtenido. Si la conexión se corta a mitad de camino,
+// tus-js-client guarda el progreso en el navegador y puede continuar desde
+// ahí la próxima vez, en vez de volver a subir el archivo entero.
+function runTusUpload(file, sig, onProgress, cacheKey) {
+  return new Promise((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: sig.tusEndpoint,
+      retryDelays: [0, 1000, 3000, 5000],
+      storeFingerprintForResuming: true,
+      headers: {
+        AuthorizationSignature: sig.signature,
+        AuthorizationExpire: String(sig.expirationTime),
+        VideoId: sig.videoId,
+        LibraryId: String(sig.libraryId),
+      },
+      metadata: { filetype: file.type, title: file.name },
+      onError: (err) => reject(err),
+      onProgress: onProgress || function () {},
+      onSuccess: () => {
+        try { localStorage.removeItem(cacheKey); } catch (e) {}
+        resolve({ url: sig.playbackUrl, mediaType: "video" });
+      },
+    });
+
+    upload.findPreviousUploads().then((previousUploads) => {
+      if (previousUploads.length > 0) upload.resumeFromPreviousUpload(previousUploads[0]);
+      upload.start();
+    });
+  });
+}
+
 function uploadMedia(file, token, onProgress) {
   const isVideo = file.type.startsWith("video");
 
@@ -136,25 +168,31 @@ function uploadMedia(file, token, onProgress) {
     });
   }
 
-  return api("/uploads/video/init", { token: token, method: "POST" }).then((sig) => {
-    return new Promise((resolve, reject) => {
-      const upload = new tus.Upload(file, {
-        endpoint: sig.tusEndpoint,
-        retryDelays: [0, 1000, 3000, 5000],
-        headers: {
-          AuthorizationSignature: sig.signature,
-          AuthorizationExpire: String(sig.expirationTime),
-          VideoId: sig.videoId,
-          LibraryId: String(sig.libraryId),
-        },
-        metadata: { filetype: file.type, title: file.name },
-        onError: (err) => reject(err),
-        onProgress: onProgress || function () {},
-        onSuccess: () => resolve({ url: sig.playbackUrl, mediaType: "video" }),
-      });
-      upload.start();
+  // Identificamos el archivo por nombre+tamaño+fecha de modificación, así si
+  // se elige el MISMO video otra vez podemos recuperar los datos de la sesión
+  // de subida anterior (mismo video de Bunny, misma firma) y reanudarla,
+  // en vez de crear un video nuevo desde cero cada vez.
+  const cacheKey = "deseo_video_upload_" + file.name + "_" + file.size + "_" + file.lastModified;
+
+  const startFresh = () =>
+    api("/uploads/video/init", { token: token, method: "POST" }).then((sig) => {
+      try { localStorage.setItem(cacheKey, JSON.stringify(sig)); } catch (e) {}
+      return runTusUpload(file, sig, onProgress, cacheKey);
     });
-  });
+
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(cacheKey) || "null"); } catch (e) {}
+
+  // La firma vence a la hora — si todavía es válida, intentamos reanudar.
+  if (cached && cached.expirationTime > Math.floor(Date.now() / 1000) + 60) {
+    return runTusUpload(file, cached, onProgress, cacheKey).catch(() => {
+      try { localStorage.removeItem(cacheKey); } catch (e) {}
+      return startFresh();
+    });
+  }
+
+  try { localStorage.removeItem(cacheKey); } catch (e) {}
+  return startFresh();
 }
 
 // Bloquea clic derecho y arrastre — desalienta la descarga casual de contenido.
