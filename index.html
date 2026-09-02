@@ -123,12 +123,22 @@ async function api(path, opts) {
 // sesión de subida) ya obtenido. Si la conexión se corta a mitad de camino,
 // tus-js-client guarda el progreso en el navegador y puede continuar desde
 // ahí la próxima vez, en vez de volver a subir el archivo entero.
-function runTusUpload(file, sig, onProgress, cacheKey) {
+function runTusUpload(file, sig, onProgress, cacheKey, token) {
   return new Promise((resolve, reject) => {
     const upload = new tus.Upload(file, {
       endpoint: sig.tusEndpoint,
       retryDelays: [0, 1000, 3000, 5000],
       storeFingerprintForResuming: true,
+      // tus-js-client guarda su PROPIO progreso guardado por archivo (nombre+
+      // tamaño+fecha), separado de nuestro caché de firma. Si no incluimos el
+      // videoId acá, una sesión de subida vieja y rota para este mismo
+      // archivo puede "resumirse" por error contra un videoId/firma nuevos,
+      // reportando éxito sin haber subido nada real.
+      fingerprint: function (fp) {
+        return Promise.resolve(
+          "deseo-" + sig.videoId + "-" + fp.name + "-" + fp.size + "-" + fp.lastModified
+        );
+      },
       headers: {
         AuthorizationSignature: sig.signature,
         AuthorizationExpire: String(sig.expirationTime),
@@ -138,7 +148,21 @@ function runTusUpload(file, sig, onProgress, cacheKey) {
       metadata: { filetype: file.type, title: file.name },
       onError: (err) => reject(err),
       onProgress: onProgress || function () {},
-      onSuccess: () => {
+      onSuccess: async () => {
+        // tus-js-client solo confirma que el NAVEGADOR terminó de enviar los
+        // bytes, no que Bunny los recibió y guardó de verdad. Lo verificamos
+        // contra la API antes de dar la subida por terminada, para no
+        // reportar éxito falso sobre un video "fantasma" con 0 bytes.
+        try {
+          const st = await api("/uploads/video/" + sig.videoId + "/status", { token: token });
+          if (!st.storageSize || st.storageSize <= 0) {
+            throw new Error("Bunny no confirmó bytes recibidos para este video.");
+          }
+        } catch (err) {
+          try { localStorage.removeItem(cacheKey); } catch (e) {}
+          reject(new Error("La subida pareció terminar pero Bunny no recibió el video. Probá de nuevo."));
+          return;
+        }
         try { localStorage.removeItem(cacheKey); } catch (e) {}
         resolve({ url: sig.playbackUrl, mediaType: "video" });
       },
@@ -177,15 +201,19 @@ function uploadMedia(file, token, onProgress) {
   const startFresh = () =>
     api("/uploads/video/init", { token: token, method: "POST" }).then((sig) => {
       try { localStorage.setItem(cacheKey, JSON.stringify(sig)); } catch (e) {}
-      return runTusUpload(file, sig, onProgress, cacheKey);
+      return runTusUpload(file, sig, onProgress, cacheKey, token);
     });
 
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(cacheKey) || "null"); } catch (e) {}
 
   // La firma vence a la hora — si todavía es válida, intentamos reanudar.
+  // Si esa sesión resulta estar rota (ver verificación de bytes en
+  // runTusUpload), este catch limpia el caché y arranca una sesión 100%
+  // nueva con un videoId distinto, en vez de quedar en un loop reintentando
+  // siempre la misma sesión fantasma.
   if (cached && cached.expirationTime > Math.floor(Date.now() / 1000) + 60) {
-    return runTusUpload(file, cached, onProgress, cacheKey).catch(() => {
+    return runTusUpload(file, cached, onProgress, cacheKey, token).catch(() => {
       try { localStorage.removeItem(cacheKey); } catch (e) {}
       return startFresh();
     });
