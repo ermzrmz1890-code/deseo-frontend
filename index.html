@@ -649,7 +649,7 @@ function PostCard(props) {
         }, "🔖")
       )
     ),
-    h("div", {
+    post.mediaType ? h("div", {
       style: { height: 280, background: colors.bgDeep, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" },
       onContextMenu: blockContextMenu,
       onClick: handleMediaTap
@@ -680,7 +680,7 @@ function PostCard(props) {
             h("div", { style: { fontSize: 30, marginBottom: 8, color: colors.gold } }, "\u25D0"),
             h("div", { style: { fontSize: 13, letterSpacing: "0.04em" } }, "Contenido bloqueado")
           )
-    ),
+    ) : null,
     post.caption ? h("p", { style: { padding: "13px 16px 4px", color: colors.ink, fontFamily: "'Work Sans', sans-serif", fontSize: 14, margin: 0, lineHeight: 1.5 } }, post.caption) : null,
     h("div", { style: { display: "flex", gap: 4, padding: "11px 16px 14px", flexWrap: "wrap" } },
       REACTIONS.map((r) =>
@@ -726,12 +726,19 @@ function CreatePostScreen(props) {
 
   const submit = async () => {
     setError("");
-    if (!file) { setError("Selecciona una foto o video primero."); return; }
+    if (!file && !caption.trim()) { setError("Agrega una foto/video o escribe algo de texto."); return; }
+    if (!file && !isFree) { setError("Las publicaciones de solo texto deben ser gratuitas."); return; }
     if (!isFree && (!price || Number(price) <= 0)) { setError("Ponle un precio válido, o marca la publicación como gratuita."); return; }
     setUploading(true);
     try {
-      const uploaded = await uploadMedia(file, token);
-      await api("/posts", { token: token, method: "POST", body: JSON.stringify({ caption: caption, mediaUrl: uploaded.url, mediaType: uploaded.mediaType, isFree: isFree, priceCents: isFree ? 0 : Math.round(Number(price) * 100) }) });
+      let mediaUrl = null;
+      let mediaType = null;
+      if (file) {
+        const uploaded = await uploadMedia(file, token);
+        mediaUrl = uploaded.url;
+        mediaType = uploaded.mediaType;
+      }
+      await api("/posts", { token: token, method: "POST", body: JSON.stringify({ caption: caption, mediaUrl: mediaUrl, mediaType: mediaType, isFree: isFree, priceCents: isFree ? 0 : Math.round(Number(price) * 100) }) });
       props.onCreated();
     } catch (err) {
       setError(err.message);
@@ -747,13 +754,13 @@ function CreatePostScreen(props) {
         ? (file && file.type.startsWith("video")
             ? h("video", { src: preview, style: { maxHeight: "100%", maxWidth: "100%" } })
             : h("img", { src: preview, alt: "", style: { maxHeight: "100%", maxWidth: "100%", objectFit: "contain" } }))
-        : h("span", { style: { color: colors.muted, fontSize: 14 } }, "Toca para elegir foto o video"),
+        : h("span", { style: { color: colors.muted, fontSize: 14 } }, "Toca para elegir foto o video (opcional)"),
       h("input", { type: "file", accept: "image/*,video/*", onChange: pickFile, style: { display: "none" } })
     ),
     h("textarea", { placeholder: "Escribe una descripción…", value: caption, onChange: (e) => setCaption(e.target.value), rows: 3, style: Object.assign({}, inputStyle, { resize: "vertical", marginBottom: 16 }) }),
     h("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
       h("button", { className: "btn-ghost", onClick: () => setIsFree(true), style: Object.assign({}, toggleButton, { background: isFree ? colors.gold : "transparent", color: isFree ? "#1A1112" : colors.muted, borderColor: isFree ? colors.gold : colors.border }) }, "Gratis"),
-      h("button", { className: "btn-ghost", onClick: () => setIsFree(false), style: Object.assign({}, toggleButton, { background: !isFree ? colors.gold : "transparent", color: !isFree ? "#1A1112" : colors.muted, borderColor: !isFree ? colors.gold : colors.border }) }, "De pago"),
+      h("button", { className: "btn-ghost", onClick: () => setIsFree(false), disabled: !file, title: file ? "" : "Las publicaciones de solo texto deben ser gratuitas", style: Object.assign({}, toggleButton, { background: !isFree ? colors.gold : "transparent", color: !isFree ? "#1A1112" : colors.muted, borderColor: !isFree ? colors.gold : colors.border, opacity: file ? 1 : 0.4, cursor: file ? "pointer" : "not-allowed" }) }, "De pago"),
       !isFree ? h("input", { type: "number", min: "0.5", step: "0.5", value: price, onChange: (e) => setPrice(e.target.value), style: Object.assign({}, inputStyle, { width: 90 }) }) : null
     ),
     error ? h("p", { style: { color: colors.red, fontSize: 13 } }, error) : null,
