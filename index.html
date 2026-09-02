@@ -1729,8 +1729,13 @@ function PollsScreen(props) {
 }
 
 function DeseoApp() {
-  const [token, setToken] = useState(null);
-  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(() => {
+    try { return localStorage.getItem("deseo_token") || null; } catch (e) { return null; }
+  });
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("deseo_user") || "null"); } catch (e) { return null; }
+  });
+  const [checkingSession, setCheckingSession] = useState(!!token);
   const [posts, setPosts] = useState([]);
   const [view, setView] = useState("feed");
   const [loading, setLoading] = useState(false);
@@ -1741,6 +1746,38 @@ function DeseoApp() {
 
   const openProfile = (id) => { setProfileUserId(id); setView("profile"); };
   const openChat = (conversationId, username, userId) => { setChat({ id: conversationId, username: username, userId: userId }); setView("chat"); };
+
+  const persistSession = (t, u) => {
+    setToken(t);
+    setUser(u);
+    try {
+      localStorage.setItem("deseo_token", t);
+      localStorage.setItem("deseo_user", JSON.stringify(u));
+    } catch (e) {}
+  };
+
+  const logout = () => {
+    try {
+      localStorage.removeItem("deseo_token");
+      localStorage.removeItem("deseo_user");
+    } catch (e) {}
+    setToken(null);
+    setUser(null);
+    setView("feed");
+    setProfileUserId(null);
+    setChat(null);
+  };
+
+  // Al abrir la app con una sesión guardada, confirmamos con el servidor que
+  // el token siga siendo válido y traemos los datos de perfil actualizados
+  // (por si cambió el avatar, bio, etc. desde otro dispositivo).
+  useEffect(() => {
+    if (!token) { setCheckingSession(false); return; }
+    api("/auth/me", { token: token })
+      .then((data) => persistSession(token, data.user))
+      .catch(() => logout())
+      .finally(() => setCheckingSession(false));
+  }, []);
 
   const loadFeed = useCallback(async () => {
     if (!token) return;
@@ -1766,8 +1803,12 @@ function DeseoApp() {
     return () => clearInterval(iv);
   }, [token]);
 
+  if (checkingSession) {
+    return h("div", { style: { minHeight: "100vh", background: colors.bg, display: "flex", alignItems: "center", justifyContent: "center", color: colors.muted, fontSize: 14 } }, "Cargando…");
+  }
+
   if (!token) {
-    return h(AuthScreen, { onAuthed: (t, u) => { setToken(t); setUser(u); } });
+    return h(AuthScreen, { onAuthed: (t, u) => persistSession(t, u) });
   }
 
   return h("div", { style: { background: colors.bg, minHeight: "100vh", fontFamily: "'Work Sans', sans-serif" } },
@@ -1800,6 +1841,10 @@ function DeseoApp() {
           style: { color: colors.muted, fontSize: 13, cursor: "pointer" },
           onClick: () => user && openProfile(user.id)
         }, "@" + (user && user.username)),
+        h("button", {
+          className: "btn-ghost", onClick: logout, title: "Cerrar sesión / cambiar de cuenta",
+          style: { background: "transparent", border: "1px solid " + colors.border, borderRadius: 6, padding: "8px 10px", color: colors.muted, cursor: "pointer", fontSize: 12 }
+        }, "Salir"),
         view === "feed"
           ? h("button", { className: "btn-primary", onClick: () => setView("create"), style: Object.assign({}, primaryButton, { margin: 0, padding: "10px 18px" }) }, "Publicar")
           : h("button", { className: "btn-ghost", onClick: () => setView("feed"), style: Object.assign({}, toggleButton, { padding: "10px 18px" }) }, "Volver al feed")
@@ -1841,7 +1886,7 @@ function DeseoApp() {
       ? h(EditProfileScreen, {
           token: token, user: user,
           onCancel: () => setView("profile"),
-          onSaved: (updatedUser) => { setUser(updatedUser); setView("profile"); }
+          onSaved: (updatedUser) => { persistSession(token, updatedUser); setView("profile"); }
         })
       : view === "inbox"
       ? h(InboxScreen, {
