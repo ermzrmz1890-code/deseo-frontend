@@ -735,6 +735,7 @@ function CreatePostScreen(props) {
   const [isFree, setIsFree] = useState(true);
   const [price, setPrice] = useState("3.00");
   const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
   const [error, setError] = useState("");
 
   const pickFile = (e) => {
@@ -744,17 +745,25 @@ function CreatePostScreen(props) {
     setPreview(URL.createObjectURL(f));
   };
 
+  useEffect(() => {
+    if (!uploading) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploading]);
+
   const submit = async () => {
     setError("");
     if (!file && !caption.trim()) { setError("Agrega una foto/video o escribe algo de texto."); return; }
     if (!file && !isFree) { setError("Las publicaciones de solo texto deben ser gratuitas."); return; }
     if (!isFree && (!price || Number(price) <= 0)) { setError("Ponle un precio válido, o marca la publicación como gratuita."); return; }
     setUploading(true);
+    setUploadPct(0);
     try {
       let mediaUrl = null;
       let mediaType = null;
       if (file) {
-        const uploaded = await uploadMedia(file, token);
+        const uploaded = await uploadMedia(file, token, (sent, total) => setUploadPct(Math.round((sent / total) * 100)));
         mediaUrl = uploaded.url;
         mediaType = uploaded.mediaType;
       }
@@ -784,9 +793,17 @@ function CreatePostScreen(props) {
       !isFree ? h("input", { type: "number", min: "0.5", step: "0.5", value: price, onChange: (e) => setPrice(e.target.value), style: Object.assign({}, inputStyle, { width: 90 }) }) : null
     ),
     error ? h("p", { style: { color: colors.red, fontSize: 13 } }, error) : null,
+    uploading && file && file.type.startsWith("video")
+      ? h("div", { style: { marginBottom: 10 } },
+          h("div", { style: { height: 6, background: colors.bgDeep, borderRadius: 4, overflow: "hidden" } },
+            h("div", { style: { height: "100%", width: uploadPct + "%", background: colors.gold, transition: "width 0.2s" } })
+          ),
+          h("p", { style: { color: colors.gold, fontSize: 12, margin: "6px 0 0", textAlign: "center" } }, "No cierres esta pantalla ni cambies de app mientras se sube el video.")
+        )
+      : null,
     h("div", { style: { display: "flex", gap: 10 } },
-      h("button", { className: "btn-ghost", onClick: props.onCancel, style: Object.assign({}, toggleButton, { flex: 1 }) }, "Cancelar"),
-      h("button", { className: "btn-primary", onClick: submit, disabled: uploading, style: Object.assign({}, primaryButton, { flex: 2, marginTop: 0 }) }, uploading ? "Publicando…" : "Publicar")
+      h("button", { className: "btn-ghost", onClick: props.onCancel, disabled: uploading, style: Object.assign({}, toggleButton, { flex: 1, opacity: uploading ? 0.5 : 1 }) }, "Cancelar"),
+      h("button", { className: "btn-primary", onClick: submit, disabled: uploading, style: Object.assign({}, primaryButton, { flex: 2, marginTop: 0 }) }, uploading ? (file && file.type.startsWith("video") ? "Subiendo… " + uploadPct + "%" : "Publicando…") : "Publicar")
     )
   );
 }
